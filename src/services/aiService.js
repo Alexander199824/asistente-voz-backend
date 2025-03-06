@@ -277,19 +277,14 @@ const AIService = {
         const content = response.data.choices[0].message.content.trim();
         logger.info(`Respuesta recibida de OpenAI: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
         
-        // Verificar si la respuesta es relevante para la consulta
-        if (this.isResponseRelevant(query, content)) {
-          return {
-            answer: content,
-            source: 'OpenAI',
-            context: 'Información actualizada',
-            confidence: 0.9,
-            isAI: true
-          };
-        } else {
-          logger.warn('Respuesta de OpenAI descartada por baja relevancia');
-          return null;
-        }
+        // Aceptar cualquier respuesta sin verificar relevancia
+        return {
+          answer: content,
+          source: 'OpenAI',
+          context: 'Información actualizada',
+          confidence: 0.9,
+          isAI: true
+        };
       }
 
       logger.warn('No se obtuvo una respuesta válida de OpenAI');
@@ -554,26 +549,13 @@ Es muy importante que tu respuesta sea directamente relevante a la pregunta exac
    * Función auxiliar para verificar relevancia de respuestas de IA
    * @param {string} query - La consulta original
    * @param {string} response - La respuesta a verificar
-   * @returns {boolean} - true si la respuesta es relevante
+   * @returns {boolean} - true siempre para aceptar todas las respuestas
    */
   isResponseRelevant(query, response) {
-    // Extrae palabras clave de la consulta
-    const stopwords = ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'a', 'al', 'y', 'o', 'que', 'en', 'con', 'por', 'para', 'como', 'se', 'su', 'sus', 'mi', 'mis', 'tu', 'tus', 'es', 'son', 'fue', 'fueron', 'ser', 'estar'];
-    
-    const normalizedQuery = query.toLowerCase().replace(/[.,;:!?¿¡]/g, '').replace(/\s+/g, ' ').trim();
-    const normalizedResponse = response.toLowerCase();
-    
-    const queryWords = normalizedQuery
-      .split(/\s+/)
-      .filter(word => word.length > 3 && !stopwords.includes(word));
-    
-    // Verificar si hay suficientes palabras clave en la respuesta
-    const matches = queryWords.filter(word => normalizedResponse.includes(word));
-    
-    // Requerir al menos 40% de coincidencia para consultas largas o 1 coincidencia para consultas cortas
-    return matches.length > 0 && (
-      queryWords.length <= 2 || (matches.length / queryWords.length) >= 0.4
-    );
+    // Siempre devolver true para aceptar cualquier respuesta de la IA
+    // y permitir que sea el usuario quien determine su relevancia
+    logger.info(`Aceptando automáticamente respuesta de IA para: "${query}"`);
+    return true;
   },
 
   /**
@@ -626,7 +608,7 @@ Es muy importante que tu respuesta sea directamente relevante a la pregunta exac
     
     // 4. Asegurar primera letra mayúscula y punto final
     processed = processed.charAt(0).toUpperCase() + processed.slice(1);
-    if (!processed.endsWith('.') && !processed.endsWith('!') && !processed.endsWith('?')) {
+    if (!processed.endsWith('.') && !processed.endsWith('?') && !processed.endsWith('!')) {
       processed += '.';
     }
     
