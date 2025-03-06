@@ -246,7 +246,7 @@ const AssistantService = {
           // Continuar con el flujo normal si falla la IA
         }
       }
-       
+      
       // 7. Buscar en la base de conocimientos
       logger.info(`Buscando respuesta para: "${normalizedQuery}" en base de conocimientos`);
       

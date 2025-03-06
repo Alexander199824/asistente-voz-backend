@@ -10,6 +10,11 @@ const KnowledgeResponseService = {
    * @returns {boolean} - true si es una consulta de información factual
    */
   isFactualQuestion(query) {
+    // Normalizar la consulta para manejar acentos incorrectos
+    const normalizedQuery = query.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .trim();
+      
     const factualPatterns = [
       /^(quien|quién|quienes|quiénes)(\s+es|\s+son|\s+fue|\s+fueron)/i,
       /^(cual|cuál|cuales|cuáles)(\s+es|\s+son|\s+fue|\s+fueron)/i,
@@ -18,6 +23,11 @@ const KnowledgeResponseService = {
       /^(cuando|cuándo)(\s+es|\s+fue|\s+ocurrió|\s+sucedió|\s+nació|\s+murió)/i,
       /^(como|cómo)(\s+se|\s+es|\s+fue|\s+funciona)/i,
       /^(por que|por qué)(\s+es|\s+son|\s+fue|\s+fueron)/i,
+      // Patrones específicos para monedas
+      /moneda(s)?\s+(?:oficial(?:es)?)?(\s+de|\s+del|\s+en)/i,
+      /que\s+moneda(s)?/i, 
+      /cuales?\s+(?:es|son)\s+(?:la|las)\s+moneda(s)?/i,
+      // Otros patrones factales
       /capital\s+de/i,
       /presidente\s+de/i,
       /población\s+de/i,
@@ -27,14 +37,24 @@ const KnowledgeResponseService = {
       /fundación\s+de/i,
       /significado\s+de/i,
       /definición\s+de/i,
-      /cuantos|cuántos|cuantas|cuántas/i,
-      /moneda\s+de|monedas\s+de|divisa\s+de|divisas\s+de/i,  // Añadido para monedas
-      /cules\s+son|cuales\s+son|cuáles\s+son/i,             // Añadido para "cuáles son" sin acentos
-      /cual\s+es|cul\s+es|cuál\s+es/i                        // Añadido para "cuál es" sin acentos
+      /cuantos|cuántos|cuantas|cuántas/i
     ];
 
     // Check if any pattern matches
-    return factualPatterns.some(pattern => pattern.test(query));
+    for (const pattern of factualPatterns) {
+      if (pattern.test(normalizedQuery) || pattern.test(query.toLowerCase())) {
+        return true;
+      }
+    }
+
+    // Verificación adicional para monedas y unión europea específicamente
+    if (normalizedQuery.includes('moneda') || normalizedQuery.includes('union europea') || 
+        normalizedQuery.includes('ue') || normalizedQuery.includes('euro')) {
+      logger.info(`Consulta "${query}" detectada como factual por palabras clave específicas.`);
+      return true;
+    }
+
+    return false;
   },
 
   /**
@@ -43,6 +63,11 @@ const KnowledgeResponseService = {
    * @returns {string|null} - Categoría de la pregunta o null
    */
   identifyQuestionCategory(query) {
+    // Normalizar la consulta
+    const normalizedQuery = query.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .trim();
+      
     // Patrones para diferentes categorías de preguntas
     const categories = {
       'definición': /^(que|qué)\s+es\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,
@@ -55,14 +80,18 @@ const KnowledgeResponseService = {
       'capital': /capital\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,
       'presidente': /presidente\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,
       'población': /población\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,
-      'moneda': /moneda(s)?\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,  // Añadido para monedas
-      'enumeración': /^(cules|cual|cuales|cuál|cuáles)\s+(son|es|eran|era)\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i  // Añadido para preguntas de enumeración
+      'moneda': /moneda(s)?\s+(?:oficial(?:es)?)?\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i
     };
 
     for (const [category, pattern] of Object.entries(categories)) {
-      if (pattern.test(query)) {
+      if (pattern.test(normalizedQuery) || pattern.test(query.toLowerCase())) {
         return category;
       }
+    }
+    
+    // Verificación adicional para monedas
+    if (normalizedQuery.includes('moneda') || normalizedQuery.includes('euro')) {
+      return 'moneda';
     }
 
     return null;
@@ -78,7 +107,11 @@ const KnowledgeResponseService = {
     try {
       if (!query || !response) return response;
       
-      const lowerQuery = query.toLowerCase().trim();
+      // Normalizar la consulta
+      const lowerQuery = query.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .trim();
+        
       const category = this.identifyQuestionCategory(lowerQuery);
       
       logger.info(`Refinando respuesta para consulta de tipo: ${category || 'general'}`);
@@ -102,8 +135,6 @@ const KnowledgeResponseService = {
             return this.refineQuantityResponse(query, response);
           case 'moneda':
             return this.refineCurrencyResponse(query, response);
-          case 'enumeración':
-            return this.refineEnumerationResponse(query, response);
           default:
             // Para otras categorías, aplicar refinamiento general
             break;
@@ -146,6 +177,18 @@ const KnowledgeResponseService = {
         }
       }
       
+      // Preguntas sobre monedas
+      if (lowerQuery.includes('moneda') || lowerQuery.includes('euro')) {
+        const entity = this.extractEntityFromMoneyQuery(lowerQuery);
+        if (entity && response.length > 100) {
+          // Intentar extraer solo la moneda
+          const currency = this.extractCurrencyFromResponse(response, entity);
+          if (currency) {
+            return `La moneda ${lowerQuery.includes('oficial') ? 'oficial ' : ''}de ${entity} es ${currency}.`;
+          }
+        }
+      }
+      
       // Si la respuesta es muy larga para una pregunta factual, acortarla
       if (this.isFactualQuestion(query) && response.length > 150) {
         const shortResponse = this.truncateToRelevantContent(response);
@@ -160,6 +203,148 @@ const KnowledgeResponseService = {
       logger.error('Error al refinar respuesta factual:', error);
       return response; // En caso de error, devolver la respuesta original
     }
+  },
+  
+  /**
+   * Extrae entidad de una consulta sobre moneda
+   * @param {string} query - Consulta normalizada 
+   * @returns {string|null} - Entidad o null
+   */
+  extractEntityFromMoneyQuery(query) {
+    const patterns = [
+      /moneda[s]?\s+(?:oficial(?:es)?)?\s+de\s+(.+?)(?:\?|$)/i,
+      /que\s+moneda[s]?\s+(?:se\s+usa[n]?\s+en)\s+(.+?)(?:\?|$)/i,
+      /moneda[s]?\s+(?:que\s+)?(?:se\s+usa[n]?\s+en)\s+(.+?)(?:\?|$)/i,
+      /cual(?:es)?\s+(?:es|son)\s+la[s]?\s+moneda[s]\s+(?:oficial(?:es)?)?\s+de\s+(.+?)(?:\?|$)/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = query.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    
+    // Si es específicamente sobre la Unión Europea
+    if (query.includes('union europea') || query.includes('unión europea') || query.includes('ue')) {
+      return 'la Unión Europea';
+    }
+    
+    return null;
+  },
+  
+  /**
+   * Extrae el nombre de la moneda de una respuesta
+   * @param {string} response - Texto de respuesta
+   * @param {string} entity - Entidad (país, región)
+   * @returns {string|null} - Nombre de la moneda o null
+   */
+  extractCurrencyFromResponse(response, entity) {
+    // Patrones para extraer nombres de monedas
+    const patterns = [
+      /moneda\s+(?:oficial)?\s+(?:es|de)\s+(?:el|la)?\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\s]+?)(\.|,)/i,
+      /(?:utiliza|usa)\s+(?:como\s+)?moneda\s+(?:oficial)?\s+(?:el|la)?\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\s]+?)(\.|,)/i,
+      /moneda\s+(?:oficial)?\s+(?:(?:es|se\s+llama)\s+)(?:el|la)?\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\s]+?)(\.|,)/i
+    ];
+    
+    // Patrones específicos para el euro
+    if (entity.toLowerCase().includes('union europea') || entity.toLowerCase().includes('unión europea') || entity.toLowerCase().includes('ue')) {
+      if (response.toLowerCase().includes('euro')) {
+        return 'el euro';
+      }
+    }
+    
+    for (const pattern of patterns) {
+      const match = response.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    
+    // Buscar menciones directas de monedas comunes
+    const commonCurrencies = [
+      'euro', 'dólar', 'peso', 'libra', 'yen', 'franco', 'real', 
+      'rupia', 'yuan', 'won', 'rublo', 'corona', 'zloty', 'rand'
+    ];
+    
+    for (const currency of commonCurrencies) {
+      if (response.toLowerCase().includes(currency)) {
+        const surrounding = this.extractSurroundingContext(response, currency, 30);
+        if (surrounding) {
+          return surrounding;
+        }
+        return `el ${currency}`;
+      }
+    }
+    
+    return null;
+  },
+  
+  /**
+   * Extrae contexto alrededor de una palabra clave
+   * @param {string} text - Texto completo
+   * @param {string} keyword - Palabra clave a buscar
+   * @param {number} windowSize - Tamaño de la ventana de contexto
+   * @returns {string|null} - Contexto o null
+   */
+  extractSurroundingContext(text, keyword, windowSize) {
+    const lowercaseText = text.toLowerCase();
+    const index = lowercaseText.indexOf(keyword);
+    
+    if (index === -1) return null;
+    
+    const start = Math.max(0, index - windowSize);
+    const end = Math.min(text.length, index + keyword.length + windowSize);
+    
+    // Extraer el fragmento
+    let fragment = text.substring(start, end);
+    
+    // Ajustar para no cortar palabras
+    if (start > 0) {
+      const firstSpace = fragment.indexOf(' ');
+      if (firstSpace > 0) {
+        fragment = fragment.substring(firstSpace + 1);
+      }
+    }
+    
+    if (end < text.length) {
+      const lastSpace = fragment.lastIndexOf(' ');
+      if (lastSpace > 0) {
+        fragment = fragment.substring(0, lastSpace);
+      }
+    }
+    
+    return fragment.trim();
+  },
+    
+  /**
+   * Refine específico para preguntas sobre monedas
+   * @param {string} query - Consulta original
+   * @param {string} response - Respuesta original
+   * @returns {string} - Respuesta refinada
+   */
+  refineCurrencyResponse(query, response) {
+    // Extraer la entidad (país, región)
+    const normalizedQuery = query.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .trim();
+      
+    const entity = this.extractEntityFromMoneyQuery(normalizedQuery);
+    
+    if (!entity) return response;
+    
+    // Extraer la moneda de la respuesta
+    const currency = this.extractCurrencyFromResponse(response, entity);
+    
+    if (currency) {
+      if (entity.toLowerCase().includes('union europea') || entity.toLowerCase().includes('unión europea') || entity.toLowerCase().includes('ue')) {
+        return `La moneda oficial de la Unión Europea es ${currency}.`;
+      }
+      return `La moneda ${normalizedQuery.includes('oficial') ? 'oficial ' : ''}de ${entity} es ${currency}.`;
+    }
+    
+    // Si no se pudo extraer la moneda, devolver la primera oración
+    return this.truncateToFirstSentence(response);
   },
   
   /**
@@ -245,7 +430,7 @@ const KnowledgeResponseService = {
       new RegExp(`presidente\\s+(?:actual\\s+)?(?:de\\s+${country}\\s+)?es\\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\\s]+?)(\\.|\,)`, 'i'),
       new RegExp(`actual\\s+presidente\\s+(?:de\\s+${country}\\s+)?es\\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\\s]+?)(\\.|\,)`, 'i'),
       new RegExp(`mandatario\\s+(?:de\\s+${country}\\s+)?es\\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\\s]+?)(\\.|\,)`, 'i'),
-      /presidente\s+(?:actual\s+)?es\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\s]+?)(\.|,)/i,
+      /presidente\s+(?:actual\s+)?es\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\s]+?)(\.|,)/i
     ];
     
     for (const pattern of patterns) {
@@ -486,96 +671,6 @@ const KnowledgeResponseService = {
     
     // Si no se pudo extraer una cantidad específica, devolver la primera oración
     return this.truncateToFirstSentence(response);
-  },
-
-  /**
-   * Nuevo: Extrae una respuesta concisa para preguntas sobre monedas
-   * @param {string} query - Consulta original
-   * @param {string} response - Respuesta original
-   * @returns {string} - Respuesta refinada
-   */
-  refineCurrencyResponse(query, response) {
-    // Extraer el lugar/entidad
-    const match = query.match(/moneda[s]?\s+(?:oficiales?\s+)?(?:de|en)\s+(.+?)(\?)?$/i);
-    if (!match) return response;
-    
-    const place = match[1].trim();
-    
-    // Patrones para extraer información de monedas
-    const currencyPatterns = [
-      new RegExp(`(?:moneda|divisa)\\s+(?:oficial)?\\s+(?:de|en)\\s+${place}\\s+es\\s+(?:el|la)?\\s+([^.]+)\\.`, 'i'),
-      new RegExp(`${place}\\s+(?:usa|utiliza|tiene como moneda|tiene como divisa)\\s+(?:el|la)?\\s+([^.]+)\\.`, 'i'),
-      new RegExp(`(?:euro|dólar|yen|libra|peso|yuan)\\s+es\\s+la\\s+moneda\\s+(?:de|en)\\s+${place}`, 'i')
-    ];
-    
-    for (const pattern of currencyPatterns) {
-      const currencyMatch = response.match(pattern);
-      if (currencyMatch && currencyMatch[1]) {
-        return `La moneda de ${place} es ${currencyMatch[1]}.`;
-      }
-    }
-    
-    // Buscar frases que contengan términos relacionados con monedas
-    const currencyKeywords = ['moneda', 'divisa', 'euro', 'dólar', 'yen', 'libra', 'peso', 'yuan'];
-    
-    const sentences = response.split(/\.|\?|\!/);
-    for (const sentence of sentences) {
-      for (const keyword of currencyKeywords) {
-        if (sentence.toLowerCase().includes(keyword)) {
-          return sentence.trim() + '.';
-        }
-      }
-    }
-    
-    // Si no se pudo extraer información específica, devolver la primera oración
-    return this.truncateToFirstSentence(response);
-  },
-
-  /**
-   * Nuevo: Extrae una respuesta concisa para preguntas de enumeración (cuáles son)
-   * @param {string} query - Consulta original
-   * @param {string} response - Respuesta original
-   * @returns {string} - Respuesta refinada
-   */
-  refineEnumerationResponse(query, response) {
-    // Si la respuesta ya tiene formato de lista, mantenerla
-    if (response.includes('\n- ') || response.includes('\n• ') || response.includes('\n* ')) {
-      return response;
-    }
-    
-    // Si la respuesta tiene múltiples párrafos, intentar mantener la estructura
-    if (response.includes('\n\n')) {
-      const paragraphs = response.split('\n\n');
-      // Tomar solo los primeros dos párrafos si la respuesta es muy larga
-      if (paragraphs.length > 2 && response.length > 300) {
-        return paragraphs.slice(0, 2).join('\n\n');
-      }
-      return response;
-    }
-    
-    // Para respuestas largas sin estructura clara, buscar enumeraciones
-    const sentences = response.split(/\.|\?|\!/);
-    let found = false;
-    let result = '';
-    
-    // Buscar oraciones que contienen enumeraciones
-    for (const sentence of sentences) {
-      if (sentence.includes(' y ') || sentence.includes(', ') || 
-          /\b(primero|segundo|tercero|cuarto|quinto|varios|diferentes|distintos|principales)\b/i.test(sentence)) {
-        result += sentence.trim() + '. ';
-        found = true;
-      } else if (!found) {
-        // Incluir la primera oración de todos modos
-        result += sentence.trim() + '. ';
-      }
-    }
-    
-    // Si no encontramos nada específico, recortar a la longitud adecuada
-    if (result.length > 300) {
-      return result.substring(0, 297) + '...';
-    }
-    
-    return result.trim();
   },
   
   /**
