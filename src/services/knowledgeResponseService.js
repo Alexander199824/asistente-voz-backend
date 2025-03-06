@@ -27,7 +27,10 @@ const KnowledgeResponseService = {
       /fundación\s+de/i,
       /significado\s+de/i,
       /definición\s+de/i,
-      /cuantos|cuántos|cuantas|cuántas/i
+      /cuantos|cuántos|cuantas|cuántas/i,
+      /moneda\s+de|monedas\s+de|divisa\s+de|divisas\s+de/i,  // Añadido para monedas
+      /cules\s+son|cuales\s+son|cuáles\s+son/i,             // Añadido para "cuáles son" sin acentos
+      /cual\s+es|cul\s+es|cuál\s+es/i                        // Añadido para "cuál es" sin acentos
     ];
 
     // Check if any pattern matches
@@ -51,7 +54,9 @@ const KnowledgeResponseService = {
       'método': /^(como|cómo)\s+(se|es|fue|funciona)\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,
       'capital': /capital\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,
       'presidente': /presidente\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,
-      'población': /población\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i
+      'población': /población\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,
+      'moneda': /moneda(s)?\s+de\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i,  // Añadido para monedas
+      'enumeración': /^(cules|cual|cuales|cuál|cuáles)\s+(son|es|eran|era)\s+[a-z0-9áéíóúüñ\s]+(\?)?$/i  // Añadido para preguntas de enumeración
     };
 
     for (const [category, pattern] of Object.entries(categories)) {
@@ -95,6 +100,10 @@ const KnowledgeResponseService = {
             return this.refinePopulationResponse(query, response);
           case 'cantidad':
             return this.refineQuantityResponse(query, response);
+          case 'moneda':
+            return this.refineCurrencyResponse(query, response);
+          case 'enumeración':
+            return this.refineEnumerationResponse(query, response);
           default:
             // Para otras categorías, aplicar refinamiento general
             break;
@@ -236,7 +245,7 @@ const KnowledgeResponseService = {
       new RegExp(`presidente\\s+(?:actual\\s+)?(?:de\\s+${country}\\s+)?es\\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\\s]+?)(\\.|\,)`, 'i'),
       new RegExp(`actual\\s+presidente\\s+(?:de\\s+${country}\\s+)?es\\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\\s]+?)(\\.|\,)`, 'i'),
       new RegExp(`mandatario\\s+(?:de\\s+${country}\\s+)?es\\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\\s]+?)(\\.|\,)`, 'i'),
-      /presidente\s+(?:actual\s+)?es\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\s]+?)(\.|,)/i
+      /presidente\s+(?:actual\s+)?es\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\s]+?)(\.|,)/i,
     ];
     
     for (const pattern of patterns) {
@@ -477,6 +486,96 @@ const KnowledgeResponseService = {
     
     // Si no se pudo extraer una cantidad específica, devolver la primera oración
     return this.truncateToFirstSentence(response);
+  },
+
+  /**
+   * Nuevo: Extrae una respuesta concisa para preguntas sobre monedas
+   * @param {string} query - Consulta original
+   * @param {string} response - Respuesta original
+   * @returns {string} - Respuesta refinada
+   */
+  refineCurrencyResponse(query, response) {
+    // Extraer el lugar/entidad
+    const match = query.match(/moneda[s]?\s+(?:oficiales?\s+)?(?:de|en)\s+(.+?)(\?)?$/i);
+    if (!match) return response;
+    
+    const place = match[1].trim();
+    
+    // Patrones para extraer información de monedas
+    const currencyPatterns = [
+      new RegExp(`(?:moneda|divisa)\\s+(?:oficial)?\\s+(?:de|en)\\s+${place}\\s+es\\s+(?:el|la)?\\s+([^.]+)\\.`, 'i'),
+      new RegExp(`${place}\\s+(?:usa|utiliza|tiene como moneda|tiene como divisa)\\s+(?:el|la)?\\s+([^.]+)\\.`, 'i'),
+      new RegExp(`(?:euro|dólar|yen|libra|peso|yuan)\\s+es\\s+la\\s+moneda\\s+(?:de|en)\\s+${place}`, 'i')
+    ];
+    
+    for (const pattern of currencyPatterns) {
+      const currencyMatch = response.match(pattern);
+      if (currencyMatch && currencyMatch[1]) {
+        return `La moneda de ${place} es ${currencyMatch[1]}.`;
+      }
+    }
+    
+    // Buscar frases que contengan términos relacionados con monedas
+    const currencyKeywords = ['moneda', 'divisa', 'euro', 'dólar', 'yen', 'libra', 'peso', 'yuan'];
+    
+    const sentences = response.split(/\.|\?|\!/);
+    for (const sentence of sentences) {
+      for (const keyword of currencyKeywords) {
+        if (sentence.toLowerCase().includes(keyword)) {
+          return sentence.trim() + '.';
+        }
+      }
+    }
+    
+    // Si no se pudo extraer información específica, devolver la primera oración
+    return this.truncateToFirstSentence(response);
+  },
+
+  /**
+   * Nuevo: Extrae una respuesta concisa para preguntas de enumeración (cuáles son)
+   * @param {string} query - Consulta original
+   * @param {string} response - Respuesta original
+   * @returns {string} - Respuesta refinada
+   */
+  refineEnumerationResponse(query, response) {
+    // Si la respuesta ya tiene formato de lista, mantenerla
+    if (response.includes('\n- ') || response.includes('\n• ') || response.includes('\n* ')) {
+      return response;
+    }
+    
+    // Si la respuesta tiene múltiples párrafos, intentar mantener la estructura
+    if (response.includes('\n\n')) {
+      const paragraphs = response.split('\n\n');
+      // Tomar solo los primeros dos párrafos si la respuesta es muy larga
+      if (paragraphs.length > 2 && response.length > 300) {
+        return paragraphs.slice(0, 2).join('\n\n');
+      }
+      return response;
+    }
+    
+    // Para respuestas largas sin estructura clara, buscar enumeraciones
+    const sentences = response.split(/\.|\?|\!/);
+    let found = false;
+    let result = '';
+    
+    // Buscar oraciones que contienen enumeraciones
+    for (const sentence of sentences) {
+      if (sentence.includes(' y ') || sentence.includes(', ') || 
+          /\b(primero|segundo|tercero|cuarto|quinto|varios|diferentes|distintos|principales)\b/i.test(sentence)) {
+        result += sentence.trim() + '. ';
+        found = true;
+      } else if (!found) {
+        // Incluir la primera oración de todos modos
+        result += sentence.trim() + '. ';
+      }
+    }
+    
+    // Si no encontramos nada específico, recortar a la longitud adecuada
+    if (result.length > 300) {
+      return result.substring(0, 297) + '...';
+    }
+    
+    return result.trim();
   },
   
   /**
