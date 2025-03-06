@@ -1,6 +1,6 @@
 const axios = require('axios');
-const { logger, config } = require('../config');
-const CacheService = require('./cacheService');
+const { logger, config } = require('./src/config');
+const CacheService = require('./src/services/cacheService');
 
 /**
  * Servicio para integración con APIs de IA
