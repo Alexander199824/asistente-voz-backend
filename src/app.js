@@ -77,4 +77,41 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
+// Añade este endpoint en tu archivo principal de rutas o app.js
+
+/**
+ * Endpoint para limpiar las respuestas incorrectas sobre la identidad del asistente
+ */
+app.delete('/api/knowledge/reset-identity', async (req, res) => {
+  try {
+    // Eliminar todas las entradas relacionadas con preguntas sobre identidad
+    const result = await db.query(`
+      DELETE FROM knowledge_base 
+      WHERE 
+        query LIKE '%quien%te%creo%' OR 
+        query LIKE '%quien%te%programo%' OR 
+        query LIKE '%quien%te%hizo%' OR 
+        query LIKE '%quien%te%desarrollo%' OR
+        query LIKE '%quienes%te%hicieron%' OR
+        query LIKE '%quienes%te%crearon%' OR
+        query LIKE '%quien%fue%que%te%' OR
+        query LIKE '%quien%es%tu%creador%' OR
+        query LIKE '%de%donde%saliste%' OR
+        query LIKE '%donde%te%crearon%'
+    `);
+    
+    res.json({ 
+      success: true, 
+      message: 'Información de identidad del sistema reiniciada',
+      entriesDeleted: result.rowCount
+    });
+  } catch (error) {
+    console.error('Error al reiniciar información de identidad:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 module.exports = app;

@@ -6,6 +6,7 @@ const programmingService = require('../services/programmingService');
 const greetingService = require('../services/greetingService');
 const knowledgeResponseService = require('../services/knowledgeResponseService');
 const factualKnowledgeService = require('../services/factualKnowledgeService');
+const systemInfoService = require('../services/systemInfoService');
 const AIService = require('./aiService');
 
 /**
@@ -35,6 +36,30 @@ const AssistantService = {
         };
       }
       
+      // BLOQUEO PRIORITARIO: Detección y manejo de consultas sobre el creador
+      // Esta verificación debe ejecutarse antes que cualquier otra
+      if (normalizedQuery.includes('quien') && 
+          (normalizedQuery.includes('creo') || normalizedQuery.includes('creó') || 
+           normalizedQuery.includes('hizo') || normalizedQuery.includes('desarrollo') || 
+           normalizedQuery.includes('desarrolló') || normalizedQuery.toLowerCase() === 'quien eres')) {
+        logger.info(`[BLOQUEO PRIORITARIO] Detectada consulta sobre creador: "${normalizedQuery}"`);
+        const creatorResponse = {
+          response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+          source: "system_info",
+          confidence: 1.0
+        };
+        
+        // Registrar en el historial
+        await this.logConversation({
+          userId,
+          query: normalizedQuery,
+          response: creatorResponse.response,
+          confidence: creatorResponse.confidence
+        });
+        
+        return creatorResponse;
+      }
+      
       // 2. Detectar si es un comando de aprendizaje
       if (this.isLearningCommand(normalizedQuery)) {
         logger.info(`Detectado comando de aprendizaje: "${normalizedQuery}"`);
@@ -56,8 +81,80 @@ const AssistantService = {
         
         return greetingResponse;
       }
+
+      // 4. PRIORIDAD ALTA: Detectar y manejar consultas sobre información del sistema
+      // Esta verificación DEBE ir antes de las consultas de IA y tiene prioridad absoluta
+      if (systemInfoService.isSystemInfoQuery(normalizedQuery)) {
+        logger.info(`Detectada consulta sobre información del sistema: "${normalizedQuery}"`);
+        const systemResponse = systemInfoService.getSystemInfo(normalizedQuery);
+        
+        // Registrar en el historial
+        await this.logConversation({
+          userId,
+          query: normalizedQuery,
+          response: systemResponse.response,
+          confidence: systemResponse.confidence
+        });
+        
+        return systemResponse;
+      }
+
+      // 4. PRIORIDAD ALTA: Detectar y manejar consultas sobre información del sistema
+      // Esta verificación DEBE ir antes de las consultas de IA y tiene prioridad absoluta
+      if (systemInfoService.isSystemInfoQuery(normalizedQuery)) {
+        logger.info(`Detectada consulta sobre información del sistema: "${normalizedQuery}"`);
+        const systemResponse = systemInfoService.getSystemInfo(normalizedQuery);
+        
+        // Registrar en el historial
+        await this.logConversation({
+          userId,
+          query: normalizedQuery,
+          response: systemResponse.response,
+          confidence: systemResponse.confidence
+        });
+        
+        return systemResponse;
+      }
       
-      // 4. Detectar y manejar cálculos matemáticos
+      // 5. Verificación EXTRA para consultas sobre el creador que pudieran escapar
+      // a la detección principal en systemInfoService.isSystemInfoQuery
+      if (normalizedQuery.includes('quien') && 
+          (normalizedQuery.includes('creo') || normalizedQuery.includes('creó') || 
+           normalizedQuery.includes('hizo') || normalizedQuery.includes('desarrollo'))) {
+        logger.info(`Detectada consulta secundaria sobre creador: "${normalizedQuery}"`);
+        const systemResponse = {
+          response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Estoy aquí para responder tus preguntas y aprender de nuestras interacciones.",
+          source: "system_info",
+          confidence: 1.0
+        };
+        
+        // Registrar en el historial
+        await this.logConversation({
+          userId,
+          query: normalizedQuery,
+          response: systemResponse.response,
+          confidence: systemResponse.confidence
+        });
+        
+        return systemResponse;
+      }
+      // 4. Detectar y manejar consultas sobre información del sistema
+      if (systemInfoService.isSystemInfoQuery(normalizedQuery)) {
+        logger.info(`Detectada consulta sobre información del sistema: "${normalizedQuery}"`);
+        const systemResponse = systemInfoService.getSystemInfo(normalizedQuery);
+        
+        // Registrar en el historial
+        await this.logConversation({
+          userId,
+          query: normalizedQuery,
+          response: systemResponse.response,
+          confidence: systemResponse.confidence
+        });
+        
+        return systemResponse;
+      }
+      
+      // 5. Detectar y manejar cálculos matemáticos
       if (this.isCalculationQuery(normalizedQuery)) {
         logger.info(`Detectada consulta matemática: "${normalizedQuery}"`);
         const calculationResult = this.handleCalculationQuery(normalizedQuery);
@@ -74,7 +171,7 @@ const AssistantService = {
         }
       }
       
-      // 5. Detectar y manejar consultas de programación
+      // 6. Detectar y manejar consultas de programación
       if (this.isProgrammingQuery(normalizedQuery)) {
         logger.info(`Detectada consulta de programación: "${normalizedQuery}"`);
         // Primero intentar con la API de Stack Overflow
@@ -143,7 +240,7 @@ const AssistantService = {
         }
       }
       
-      // 5B. Detectar y manejar consultas factuales directas
+      // 7. Detectar y manejar consultas factuales directas
       if (this.isDirectFactualQuery(normalizedQuery)) {
         logger.info(`Detectada consulta factual directa: "${normalizedQuery}"`);
         const factualResponse = factualKnowledgeService.getDirectFactualResponse(normalizedQuery);
@@ -164,7 +261,7 @@ const AssistantService = {
         }
       }
       
-      // 6. Comprobar si es una pregunta factual y si es candidata para IA
+      // 8. Determinar si es una pregunta factual o candidata para IA
       const isFactual = knowledgeResponseService.isFactualQuestion(normalizedQuery);
       const isAICandidate = AIService.isAIQuery(normalizedQuery);
 
@@ -172,85 +269,9 @@ const AssistantService = {
       logger.info(`Análisis de consulta: isFactual=${isFactual}, isAICandidate=${isAICandidate}`);
       logger.info(`Estado de IA: enabled=${config.ai && config.ai.enabled}, priority=${config.ai ? config.ai.priority : 'no configurado'}`);
 
-      // CAMBIO IMPORTANTE: Para preguntas de cultura general, intentar usar IA primero
-      if (config.ai && config.ai.enabled && (isFactual || isAICandidate)) {
-        try {
-          logger.info(`Consultando IA para pregunta de cultura general: "${normalizedQuery}"`);
-          const aiResult = await AIService.getAIResponse(normalizedQuery);
-          
-          if (aiResult && aiResult.answer) {
-            logger.info(`Respuesta recibida de IA: "${aiResult.answer}"`);
-            
-            // Guardar el resultado de IA en la base de conocimientos
-            let newKnowledge;
-            try {
-              // Verificar primero si ya existe una consulta similar
-              const existingEntries = await KnowledgeModel.findAnswers(
-                normalizedQuery,
-                0.85, // Umbral alto para verificar duplicados
-                userId
-              );
-              
-              if (existingEntries.length > 0 && existingEntries[0].similarity > 0.9) {
-                // Si existe una entrada muy similar, actualizarla en lugar de crear una nueva
-                const existingEntry = existingEntries[0];
-                logger.info(`Encontrada entrada similar existente (similitud: ${existingEntry.similarity.toFixed(2)}), actualizando en lugar de crear nueva`);
-                
-                await KnowledgeModel.updateKnowledge(existingEntry.id, {
-                  response: aiResult.answer,
-                  context: aiResult.context || null,
-                  source: aiResult.source || 'IA',
-                  confidence: Math.max(existingEntry.confidence, 0.9) // Mantener confianza alta
-                });
-                
-                newKnowledge = await KnowledgeModel.getById(existingEntry.id);
-                logger.info(`Conocimiento existente actualizado con respuesta de IA, ID: ${newKnowledge.id}`);
-              } else {
-                // Si no existe, crear nuevo conocimiento
-                newKnowledge = await KnowledgeModel.addKnowledge({
-                  query: normalizedQuery,
-                  response: aiResult.answer,
-                  context: aiResult.context || null,
-                  source: aiResult.source || 'IA',
-                  confidence: 0.92, // Empezar con confianza alta para respuestas de IA
-                  userId: null, // Los resultados de IA son globales
-                  isPublic: true
-                });
-                logger.info(`Nueva respuesta de IA guardada en base de conocimientos con ID: ${newKnowledge.id}`);
-              }
-            } catch (knowledgeAddError) {
-              logger.error('Error al guardar conocimiento de IA:', knowledgeAddError);
-            }
-            
-            // Registrar en el historial
-            await this.logConversation({
-              userId,
-              query: normalizedQuery,
-              response: aiResult.answer,
-              knowledgeId: newKnowledge ? newKnowledge.id : null,
-              confidence: 0.92
-            });
-            
-            return {
-              response: aiResult.answer,
-              source: aiResult.source || 'IA',
-              confidence: 0.92,
-              knowledgeId: newKnowledge ? newKnowledge.id : null,
-              isAI: true
-            };
-          } else {
-            logger.warn('No se obtuvo respuesta de IA, continuando con otros métodos');
-          }
-        } catch (aiError) {
-          logger.error('Error en consulta a IA:', aiError);
-          // Continuar con el flujo normal si falla la IA
-        }
-      }
+      // 9. PRIMERA BÚSQUEDA: Base de conocimientos
+      logger.info(`PASO 1: Buscando respuesta en base de conocimientos para: "${normalizedQuery}"`);
       
-      // 7. Buscar en la base de conocimientos
-      logger.info(`Buscando respuesta para: "${normalizedQuery}" en base de conocimientos`);
-      
-      // Añadir manejo de errores explícito aquí
       let knowledgeResults = [];
       try {
         knowledgeResults = await KnowledgeModel.findAnswers(
@@ -268,14 +289,12 @@ const AssistantService = {
         }
       } catch (knowledgeError) {
         logger.error('Error al buscar en la base de conocimientos:', knowledgeError);
-        // Continuar con el flujo normal si hay un error
       }
       
-      // Exigir mayor similitud para considerarlo una buena coincidencia (0.75 en lugar de 0.8)
-      // Este umbral más bajo permite más coincidencias pero sigue siendo bastante estricto
+      // Si hay una buena coincidencia en la base de conocimientos (similitud > 0.75)
       if (knowledgeResults.length > 0 && knowledgeResults[0].similarity > 0.75) {
         const bestMatch = knowledgeResults[0];
-        logger.info(`Mejor coincidencia encontrada: "${bestMatch.query}" (similitud: ${bestMatch.similarity.toFixed(2)}, confianza: ${bestMatch.confidence.toFixed(2)})`);
+        logger.info(`Mejor coincidencia encontrada en BD: "${bestMatch.query}" (similitud: ${bestMatch.similarity.toFixed(2)}, confianza: ${bestMatch.confidence.toFixed(2)})`);
         
         // Verificar si la respuesta parece desactualizada y la consulta es candidata para IA
         const potentiallyOutdated = AIService.isPotentiallyOutdated(bestMatch.response);
@@ -293,8 +312,10 @@ const AssistantService = {
               try {
                 await KnowledgeModel.updateKnowledge(bestMatch.id, {
                   response: aiResult.answer,
-                  confidence: Math.max(bestMatch.confidence, 0.9), // Mantener la confianza alta si ya lo era
-                  source: aiResult.source || 'IA actualizada'
+                  confidence: Math.max(bestMatch.confidence, 0.9),
+                  source: aiResult.source || 'IA actualizada',
+                  is_ai_generated: true,
+                  updated_at: new Date()
                 });
                 logger.info(`Conocimiento actualizado en base de datos, ID: ${bestMatch.id}`);
               } catch (updateError) {
@@ -322,7 +343,6 @@ const AssistantService = {
             }
           } catch (aiError) {
             logger.error('Error al verificar actualización con IA:', aiError);
-            // Continuar con la respuesta original si falla la IA
           }
         }
         
@@ -357,19 +377,18 @@ const AssistantService = {
         logger.info('No se encontraron coincidencias en la base de conocimientos');
       }
       
-      // 8. Si no hay buenas coincidencias y la búsqueda web está habilitada, buscar en la web
+      // 10. SEGUNDA BÚSQUEDA: Web (si está habilitada)
       if (config.assistant.webSearchEnabled) {
-        logger.info(`Intentando búsqueda web para: "${normalizedQuery}"`);
+        logger.info(`PASO 2: Intentando búsqueda web para: "${normalizedQuery}"`);
         try {
           const webResult = await webSearchService.search(normalizedQuery);
           
           if (webResult && webResult.answer) {
             logger.info(`Resultado encontrado en búsqueda web desde: ${webResult.source}`);
             
-            // MEJORA: Verificar explícitamente si la respuesta web es relevante
+            // Verificar si la respuesta web es relevante
             if (!this.isWebResponseRelevant(normalizedQuery, webResult.answer)) {
               logger.warn(`Respuesta web descartada por irrelevante: "${webResult.answer.substring(0, 100)}..."`);
-              // Si la respuesta web no es relevante, pasar directamente a IA como último recurso
             } else {
               // Refinar la respuesta si es una pregunta factual
               let finalAnswer = webResult.answer;
@@ -384,7 +403,7 @@ const AssistantService = {
               // Verificar si existe una consulta similar antes de guardar
               const existingEntries = await KnowledgeModel.findAnswers(
                 normalizedQuery,
-                0.85, // Umbral alto para verificar duplicados
+                0.85,
                 userId
               );
               
@@ -400,7 +419,8 @@ const AssistantService = {
                     response: finalAnswer,
                     context: webResult.context || null,
                     source: 'web',
-                    confidence: Math.max(existingEntry.confidence, 0.85) // Mantener confianza alta
+                    confidence: Math.max(existingEntry.confidence, 0.85),
+                    updated_at: new Date()
                   });
                   
                   knowledgeId = existingEntry.id;
@@ -413,8 +433,10 @@ const AssistantService = {
                     context: webResult.context || null,
                     source: 'web',
                     confidence: 0.85,
-                    userId: null, // Los resultados de la web son globales
-                    isPublic: true
+                    userId: null,
+                    isPublic: true,
+                    created_at: new Date(),
+                    updated_at: new Date()
                   });
                   
                   knowledgeId = newKnowledge.id;
@@ -422,7 +444,6 @@ const AssistantService = {
                 }
               } catch (knowledgeAddError) {
                 logger.error('Error al guardar conocimiento de web:', knowledgeAddError);
-                // Si falla al guardar, continuamos sin el ID de knowledge
               }
               
               // Registrar en el historial
@@ -447,15 +468,14 @@ const AssistantService = {
           }
         } catch (error) {
           logger.error('Error en la búsqueda web:', error);
-          // Continuar con respuesta por defecto si falla la búsqueda web
         }
       } else {
         logger.info('Búsqueda web deshabilitada en configuración');
       }
       
-      // 8.5 Si todo lo anterior falla y es candidato para IA, intentar con IA como último recurso
+      // 11. TERCERA BÚSQUEDA: IA como último recurso
       if (config.ai && config.ai.enabled && (isFactual || isAICandidate)) {
-        logger.info(`Consultando IA como último recurso para: "${normalizedQuery}"`);
+        logger.info(`PASO 3: Consultando IA como último recurso para: "${normalizedQuery}"`);
         try {
           const aiResult = await AIService.getAIResponse(normalizedQuery);
           
@@ -465,18 +485,56 @@ const AssistantService = {
             // Guardar el resultado de IA en la base de conocimientos
             let newKnowledge;
             try {
-              newKnowledge = await KnowledgeModel.addKnowledge({
-                query: normalizedQuery,
-                response: aiResult.answer,
-                context: aiResult.context || null,
-                source: aiResult.source || 'IA',
-                confidence: 0.85,
-                userId: null,
-                isPublic: true
-              });
+              // Verificar si ya existe una entrada similar antes de crear nueva
+              const existingEntries = await KnowledgeModel.findAnswers(
+                normalizedQuery,
+                0.85,
+                userId
+              );
+              
+              if (existingEntries.length > 0 && existingEntries[0].similarity > 0.9) {
+                // Actualizar entrada existente
+                const existingEntry = existingEntries[0];
+                await KnowledgeModel.updateKnowledge(existingEntry.id, {
+                  response: aiResult.answer,
+                  context: aiResult.context || null,
+                  source: aiResult.source || 'IA',
+                  confidence: 0.9,
+                  is_ai_generated: true,
+                  updated_at: new Date()
+                });
+                newKnowledge = await KnowledgeModel.getById(existingEntry.id);
+              } else {
+                // Crear nueva entrada
+                newKnowledge = await KnowledgeModel.addKnowledge({
+                  query: normalizedQuery,
+                  response: aiResult.answer,
+                  context: aiResult.context || null,
+                  source: aiResult.source || 'IA',
+                  confidence: 0.85,
+                  userId: null,
+                  isPublic: true,
+                  is_ai_generated: true,
+                  created_at: new Date(),
+                  updated_at: new Date()
+                });
+              }
               logger.info(`Respuesta de IA (último recurso) guardada en base de conocimientos, ID: ${newKnowledge ? newKnowledge.id : 'error'}`);
             } catch (knowledgeAddError) {
               logger.error('Error al guardar conocimiento de IA:', knowledgeAddError);
+              
+              // Intento alternativo en caso de fallo
+              try {
+                newKnowledge = await KnowledgeModel.addKnowledge({
+                  query: normalizedQuery,
+                  response: aiResult.answer,
+                  source: 'IA fallback',
+                  confidence: 0.85,
+                  isPublic: true
+                });
+              } catch (fallbackError) {
+                logger.error('También falló método alternativo:', fallbackError);
+              }
             }
             
             // Registrar en el historial
@@ -500,11 +558,10 @@ const AssistantService = {
           }
         } catch (aiError) {
           logger.error('Error en consulta a IA como último recurso:', aiError);
-          // Continuar con respuesta por defecto si falla la IA
         }
       }
       
-      // 9. Si todo lo demás falla, dar una respuesta genérica
+      // 12. Si todo lo demás falla, dar una respuesta genérica
       logger.info(`No se encontró respuesta para "${normalizedQuery}", respondiendo con mensaje por defecto`);
       const defaultResponse = "Lo siento, no tengo una respuesta para eso. ¿Quieres enseñarme diciendo 'aprende que [pregunta] es [respuesta]'?";
       
@@ -606,7 +663,13 @@ const AssistantService = {
       /^aprende (.+) como (.+)$/i,
       /^ensena que (.+) es (.+)$/i,
       /^ensena (.+) es (.+)$/i,
-      /^recuerda que (.+) es (.+)$/i
+      /^enseña que (.+) es (.+)$/i,
+      /^enseña (.+) es (.+)$/i,
+      /^recuerda que (.+) es (.+)$/i,
+      /^recuerda (.+) es (.+)$/i,
+      /^guarda que (.+) es (.+)$/i,
+      /^guarda (.+) es (.+)$/i,
+      /^memoriza que (.+) es (.+)$/i
     ];
     
     return learningPatterns.some(pattern => pattern.test(query));

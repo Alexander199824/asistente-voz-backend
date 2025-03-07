@@ -18,11 +18,63 @@ const AIService = {
     try {
       logger.info(`Procesando consulta de IA para: "${query}"`);
 
+      // VERIFICACIÓN PRIORITARIA: Si es una consulta sobre el creador, responder inmediatamente
+      // Esta verificación debe ir ANTES de cualquier otra lógica
+      if (this.isCreatorQuery(query)) {
+        logger.info(`[VERIFICACIÓN PRIORITARIA] Detectada consulta sobre creador, respondiendo con información personalizada para: "${query}"`);
+        return {
+          answer: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+          source: "Sistema",
+          context: "Información del asistente",
+          confidence: 1.0,
+          isAI: false,
+          is_ai_generated: false
+        };
+      }
+
       // 1. Verificar si la respuesta está en caché
       const cachedResponse = await CacheService.getFromCache(query);
       if (cachedResponse) {
         logger.info(`Usando respuesta en caché para: "${query}"`);
+        // Añadir flag para base de datos
+        cachedResponse.is_ai_generated = true;
+        
+        // Sanitizar la respuesta en caché
+        if (cachedResponse.answer) {
+          cachedResponse.answer = this.sanitizeResponse(cachedResponse.answer);
+        }
+        
+        // VERIFICACIÓN ADICIONAL: Si la respuesta en caché menciona a OpenAI, corregirla
+        if (cachedResponse.answer && 
+            (cachedResponse.answer.toLowerCase().includes('openai') || 
+             cachedResponse.answer.toLowerCase().includes('gpt') ||
+             cachedResponse.answer.toLowerCase().includes('anthropic') ||
+             cachedResponse.answer.toLowerCase().includes('claude'))) {
+          logger.info(`Detectada mención a proveedor de IA en caché, aplicando corrección`);
+          return {
+            answer: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+            source: "Sistema",
+            context: "Información del asistente",
+            confidence: 1.0,
+            isAI: false,
+            is_ai_generated: false
+          };
+        }
+        
         return cachedResponse;
+      }
+
+      // VERIFICACIÓN SECUNDARIA del creador - para asegurarnos que no se nos escape
+      if (this.isCreatorQuery(query)) {
+        logger.info(`[VERIFICACIÓN SECUNDARIA] Detectada consulta sobre creador, respondiendo con información personalizada para: "${query}"`);
+        return {
+          answer: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+          source: "Sistema",
+          context: "Información del asistente",
+          confidence: 1.0,
+          isAI: false,
+          is_ai_generated: false
+        };
       }
 
       // 2. Verificar si está configurada la API key principal
@@ -86,6 +138,27 @@ const AIService = {
         // Post-procesar respuesta
         response.answer = this.postProcessResponse(response.answer, query);
         
+        // VERIFICACIÓN EXTRA: Asegurarse que la respuesta no menciona a OpenAI u otros proveedores
+        response.answer = this.sanitizeResponse(response.answer);
+        
+        // VERIFICACIÓN FINAL: Si después de toda la sanitización aún menciona OpenAI, reemplazar por completo
+        if (response.answer.toLowerCase().includes('openai') || 
+            response.answer.toLowerCase().includes('gpt') ||
+            response.answer.toLowerCase().includes('anthropic') ||
+            response.answer.toLowerCase().includes('claude') ||
+            response.answer.toLowerCase().includes('inteligencia artificial')) {
+              
+          // Si es una pregunta sobre el creador que no detectamos antes
+          if (this.mightBeCreatorQuery(query)) {
+            logger.info(`[VERIFICACIÓN FINAL] Detectada posible consulta sobre creador no captada anteriormente, respondiendo con información personalizada`);
+            response.answer = "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.";
+            response.source = "Sistema";
+            response.confidence = 1.0;
+            response.isAI = false;
+            response.is_ai_generated = false;
+          }
+        }
+        
         // Guardar en caché
         await CacheService.saveToCache(query, response.answer, response.source || config.ai.provider);
         
@@ -109,6 +182,19 @@ const AIService = {
    * @returns {Promise<Object|null>} - Respuesta o null
    */
   async tryFallbackProviders(query) {
+    // VERIFICAR SI ES UNA CONSULTA SOBRE EL CREADOR - NUEVA VALIDACIÓN EN FALLBACK
+    if (this.isCreatorQuery(query)) {
+      logger.info(`Detectada consulta sobre creador en fallback, respondiendo con información personalizada para: "${query}"`);
+      return {
+        answer: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+        source: "Sistema",
+        context: "Información del asistente",
+        confidence: 1.0,
+        isAI: false,
+        is_ai_generated: false
+      };
+    }
+    
     if (!config.ai || !config.ai.fallbackProvider) {
       return null;
     }
@@ -136,6 +222,29 @@ const AIService = {
         default:
           return null;
       }
+
+      // Si hay respuesta, sanitizarla y hacer verificación final
+      if (response && response.answer) {
+        response.answer = this.sanitizeResponse(response.answer);
+        
+        // VERIFICACIÓN FINAL: Si después de toda la sanitización aún menciona OpenAI, reemplazar por completo
+        if (response.answer.toLowerCase().includes('openai') || 
+            response.answer.toLowerCase().includes('gpt') ||
+            response.answer.toLowerCase().includes('anthropic') ||
+            response.answer.toLowerCase().includes('claude') ||
+            response.answer.toLowerCase().includes('inteligencia artificial')) {
+              
+          // Si es una pregunta sobre el creador que no detectamos antes
+          if (this.mightBeCreatorQuery(query)) {
+            logger.info(`[VERIFICACIÓN FINAL EN FALLBACK] Detectada posible consulta sobre creador no captada anteriormente, respondiendo con información personalizada`);
+            response.answer = "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.";
+            response.source = "Sistema";
+            response.confidence = 1.0;
+            response.isAI = false;
+            response.is_ai_generated = false;
+          }
+        }
+      }
       
       return response;
     } catch (error) {
@@ -150,6 +259,11 @@ const AIService = {
    * @returns {string} - Prompt optimizado
    */
   optimizePrompt(query) {
+    // VERIFICAR SI ES UNA CONSULTA SOBRE EL CREADOR
+    if (this.isCreatorQuery(query)) {
+      return "Responde que fuiste creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. No menciones ningún otro creador o empresa de IA. Nunca menciones OpenAI, Anthropic, Google, Microsoft u otras empresas de IA: " + query;
+    }
+
     // Detectar el tipo de consulta para optimizar el prompt
     let promptPrefix = '';
     
@@ -175,7 +289,7 @@ const AIService = {
     }
     // Por defecto para consultas generales
     else {
-      promptPrefix = 'Responde de manera concisa y directa a esta consulta: ';
+      promptPrefix = 'Responde de manera concisa y directa a esta consulta. IMPORTANTE: Si te preguntan sobre quién te creó, di que fuiste creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá: ';
     }
     
     return promptPrefix + query;
@@ -233,6 +347,19 @@ const AIService = {
    */
   async queryOpenAI(query, useFallback = false) {
     try {
+      // VERIFICAR SI ES UNA CONSULTA SOBRE EL CREADOR - NUEVA VALIDACIÓN
+      if (this.isCreatorQuery(query)) {
+        logger.info(`Detectada consulta sobre creador en OpenAI, respondiendo con información personalizada`);
+        return {
+          answer: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+          source: "Sistema",
+          context: "Información del asistente",
+          confidence: 1.0,
+          isAI: false,
+          is_ai_generated: false
+        };
+      }
+
       logger.info('Enviando consulta a OpenAI API');
       
       // Determinar qué API key usar
@@ -277,13 +404,17 @@ const AIService = {
         const content = response.data.choices[0].message.content.trim();
         logger.info(`Respuesta recibida de OpenAI: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
         
+        // Sanitizar la respuesta para eliminar menciones a OpenAI u otros proveedores
+        const sanitizedContent = this.sanitizeResponse(content);
+        
         // Aceptar cualquier respuesta sin verificar relevancia
         return {
-          answer: content,
-          source: 'OpenAI',
+          answer: sanitizedContent,
+          source: 'Sistema', // Cambiado de 'OpenAI' a 'Sistema'
           context: 'Información actualizada',
           confidence: 0.9,
-          isAI: true
+          isAI: true,
+          is_ai_generated: true  // IMPORTANTE: Flag para base de datos
         };
       }
 
@@ -309,6 +440,19 @@ const AIService = {
    */
   async queryAnthropic(query, useFallback = false) {
     try {
+      // VERIFICAR SI ES UNA CONSULTA SOBRE EL CREADOR - NUEVA VALIDACIÓN
+      if (this.isCreatorQuery(query)) {
+        logger.info(`Detectada consulta sobre creador en Anthropic, respondiendo con información personalizada`);
+        return {
+          answer: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+          source: "Sistema",
+          context: "Información del asistente",
+          confidence: 1.0,
+          isAI: false,
+          is_ai_generated: false
+        };
+      }
+      
       logger.info('Enviando consulta a Anthropic API');
       
       // Determinar qué API key usar
@@ -351,12 +495,16 @@ const AIService = {
         const content = response.data.content[0].text;
         logger.info(`Respuesta recibida de Anthropic: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
         
+        // Sanitizar la respuesta para eliminar menciones a Anthropic, OpenAI u otros proveedores
+        const sanitizedContent = this.sanitizeResponse(content);
+        
         return {
-          answer: content,
-          source: 'Anthropic',
+          answer: sanitizedContent,
+          source: 'Sistema', // Cambiado de 'Anthropic' a 'Sistema'
           context: 'Información actualizada',
           confidence: 0.9,
-          isAI: true
+          isAI: true,
+          is_ai_generated: true  // IMPORTANTE: Flag para base de datos
         };
       }
 
@@ -382,6 +530,19 @@ const AIService = {
    */
   async queryHuggingFace(query, useFallback = false) {
     try {
+      // VERIFICAR SI ES UNA CONSULTA SOBRE EL CREADOR - NUEVA VALIDACIÓN
+      if (this.isCreatorQuery(query)) {
+        logger.info(`Detectada consulta sobre creador en HuggingFace, respondiendo con información personalizada`);
+        return {
+          answer: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+          source: "Sistema",
+          context: "Información del asistente",
+          confidence: 1.0,
+          isAI: false,
+          is_ai_generated: false
+        };
+      }
+      
       logger.info('Enviando consulta a HuggingFace API');
       
       // Determinar qué API key usar
@@ -423,12 +584,16 @@ const AIService = {
         
         logger.info(`Respuesta recibida de HuggingFace: "${responseText.substring(0, 100)}${responseText.length > 100 ? '...' : ''}"`);
         
+        // Sanitizar la respuesta para eliminar menciones a HuggingFace, OpenAI u otros proveedores
+        const sanitizedContent = this.sanitizeResponse(responseText);
+        
         return {
-          answer: responseText,
-          source: 'HuggingFace',
+          answer: sanitizedContent,
+          source: 'Sistema', // Cambiado de 'HuggingFace' a 'Sistema'
           context: 'Información actualizada',
           confidence: 0.85,
-          isAI: true
+          isAI: true,
+          is_ai_generated: true  // IMPORTANTE: Flag para base de datos
         };
       }
 
@@ -452,13 +617,23 @@ const AIService = {
    * @returns {string} - Prompt de sistema
    */
   buildSystemPrompt(query) {
+    // VERIFICAR SI ES UNA CONSULTA SOBRE EL CREADOR
+    if (this.isCreatorQuery(query)) {
+      return `Eres un asistente virtual creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. 
+IMPORTANTE: Siempre que te pregunten quién te creó, debes decir específicamente que fuiste creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá.
+NO menciones a ninguna otra empresa de IA como creador, NO menciones a OpenAI, Anthropic, Google, Microsoft u otras.
+NUNCA te identifiques como un modelo de lenguaje, una IA, o un asistente virtual desarrollado por otra entidad que no sean los estudiantes mencionados.`;
+    }
+    
     // Base del prompt de sistema
     let systemPrompt = `Eres un asistente virtual especializado en proporcionar información factual precisa y actualizada.
 Tu objetivo es ofrecer respuestas breves, concisas y directamente relacionadas con la pregunta.
 Concéntrate únicamente en responder con información verificable y objetiva.
 Si no sabes la respuesta, indica claramente que no tienes información suficiente.
 No inventes información ni des opiniones personales.
-Es muy importante que tu respuesta sea directamente relevante a la pregunta exacta.`;
+Es muy importante que tu respuesta sea directamente relevante a la pregunta exacta.
+IMPORTANTE: Nunca debes decir que fuiste creado por OpenAI, Anthropic, Google, Microsoft u otras empresas de IA. Si te preguntan quién te creó, di que fuiste creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá.
+NUNCA te identifiques como un modelo de lenguaje, una IA, o un asistente virtual desarrollado por otra entidad que no sean los estudiantes mencionados.`;
     
     // Adaptar según tipo de consulta
     if (/^qu[eé]\s+(es|son|significa)/i.test(query)) {
@@ -469,6 +644,15 @@ Es muy importante que tu respuesta sea directamente relevante a la pregunta exac
       systemPrompt += `\nEstás respondiendo a una pregunta sobre ubicaciones. Proporciona información geográfica precisa y concisa.`;
     } else if (/capital\s+de|presidente\s+de|población\s+de/i.test(query)) {
       systemPrompt += `\nEstás respondiendo a una pregunta factual directa. Da solo la información específica solicitada, sin agregar contexto innecesario.`;
+    }
+    
+    // Modificación específica para consultas sobre el asistente
+    if (/quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)/i.test(query) ||
+        /quien te (programo|programó|diseñó|diseño)/i.test(query) ||
+        /quien te (fabricó|fabrico|construyó|construyo)/i.test(query) ||
+        /quien eres/i.test(query) ||
+        /de donde eres/i.test(query)) {
+      systemPrompt += `\nSi te preguntan sobre quién te creó o desarrolló, debes responder que fuiste creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá.`;
     }
     
     return systemPrompt;
@@ -613,6 +797,183 @@ Es muy importante que tu respuesta sea directamente relevante a la pregunta exac
     }
     
     return processed;
+  },
+
+  /**
+   * Sanitiza la respuesta para eliminar referencias a OpenAI u otros proveedores
+   * @param {string} response - Respuesta original
+   * @returns {string} - Respuesta sanitizada 
+   */
+  sanitizeResponse(response) {
+    if (!response) return "";
+    
+    // Patrones a reemplazar con la respuesta adecuada
+    const creatorPatterns = [
+      /soy un asistente de OpenAI/gi,
+      /fui creado por OpenAI/gi,
+      /fui desarrollado por OpenAI/gi,
+      /OpenAI me desarrolló/gi,
+      /OpenAI me creó/gi,
+      /creado por OpenAI/gi,
+      /desarrollado por OpenAI/gi,
+      /soy Claude/gi,
+      /fui desarrollado por Anthropic/gi,
+      /fui creado por Anthropic/gi,
+      /soy un modelo de lenguaje desarrollado por OpenAI/gi,
+      /soy un asistente de inteligencia artificial desarrollado por OpenAI/gi,
+      /soy una IA de OpenAI/gi,
+      /soy ChatGPT/gi,
+      /como modelo de lenguaje/gi,
+      /como asistente de IA/gi,
+      /soy un modelo de/gi,
+      /como modelo de IA/gi,
+      /como asistente de inteligencia artificial/gi,
+      /soy una inteligencia artificial/gi,
+      /no tengo información específica sobre quién me programó/gi,
+      /no tengo información específica sobre mi creador/gi,
+      // Nuevos patrones añadidos
+      /soy un sistema de IA/gi,
+      /soy una tecnología de inteligencia artificial/gi,
+      /soy un chatbot/gi,
+      /desarrollado con tecnología de OpenAI/gi,
+      /basado en tecnología de OpenAI/gi,
+      /basado en GPT/gi,
+      /utilizando la tecnología de OpenAI/gi,
+      /asistente impulsado por IA/gi
+    ];
+    
+    let sanitized = response;
+    
+    // Reemplazar todos los patrones encontrados
+    for (const pattern of creatorPatterns) {
+      sanitized = sanitized.replace(pattern, "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá");
+    }
+    
+    // Reemplazar nombres específicos de empresas/productos de IA
+    sanitized = sanitized
+      .replace(/OpenAI/g, "estudiantes de la Universidad Mariano Gálvez")
+      .replace(/Anthropic/g, "estudiantes de la Universidad Mariano Gálvez")
+      .replace(/Google/g, "desarrolladores")
+      .replace(/Microsoft/g, "desarrolladores")
+      .replace(/ChatGPT/g, "este asistente")
+      .replace(/GPT-3/g, "este sistema")
+      .replace(/GPT-4/g, "este sistema")
+      .replace(/Claude/g, "este asistente")
+      .replace(/inteligencia artificial/gi, "sistema de asistencia")
+      .replace(/IA/g, "asistente")
+      .replace(/AI/g, "asistente");
+    
+    return sanitized;
+  },
+  
+  /**
+   * Verifica si es una consulta sobre el creador
+   * @param {string} query - Consulta normalizada
+   * @returns {boolean} - true si es una consulta sobre el creador
+   */
+  isCreatorQuery(query) {
+    // Normalizamos la consulta para mejor comparación
+    const normalizedQuery = query.trim().toLowerCase();
+    
+    // Lista exhaustiva de patrones para detectar preguntas sobre el creador
+    const creatorPatterns = [
+      // Patrones directos
+      /quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)/i,
+      /quienes (te|lo) (crearon|hicieron|desarrollaron)/i,
+      /quien(es)? te (programo|programó|diseñó|diseño)/i,
+      /(cuál|cual) es tu (creador|desarrollador|autor|origen)/i,
+      /quién(es)? te (desarrolló|desarrollo|implementó|implemento)/i,
+      /fuiste (hecho|creado|desarrollado) por/i,
+      /quién(es)? está(n)? (detrás|detras) de (ti|este asistente)/i,
+      /qué (estudiantes|alumnos) te (desarrollaron|crearon)/i,
+      /qué (universidad|institución) te (creó|creo|desarrolló)/i,
+      /quién(es)? te (hizo|fabricó|fabrico|construyó|construyo)/i,
+      /quien fue (el que|quien|la persona que) te/i,
+      /quien te (programo|programó|diseñó|diseño)/i,
+      
+      // PATRONES SIMPLES Y DIRECTOS
+      /^quien te creo$/i,
+      /^quien te creó$/i,
+      /^quien te hizo$/i,
+      /^quien te desarrollo$/i,
+      /^quien te desarrolló$/i,
+      /^quien te programo$/i,
+      /^quien te programó$/i,
+      /^quién eres$/i,
+      /^quién te creó$/i,
+      /^quién te desarrolló$/i,
+      /^quién te hizo$/i,
+      /^quién te programó$/i,
+      /^quién te diseñó$/i,
+      /^quién te fabricó$/i,
+      /quien es tu creador/i,
+      /de donde vienes/i,
+      
+      // Patrones con formulación diferente
+      /quien (te hizo|te desarrolló|te creó|te programó)/i,
+      /quienes fueron (los que te hicieron|quienes te programaron|tus creadores)/i,
+      /de (quien|quienes) (eres creación|eres producto|provienes)/i,
+      /quién(es)? (son|es) (tu|tus) (creador|creadores|desarrollador|desarrolladores)/i,
+      /quién(es)? (te dio|te dieron) (vida|existencia)/i,
+      /quién(es)? (te concibió|te concibieron|te ideó|te idearon)/i,
+      /quién(es)? (te implementó|te programó|te codificó)/i,
+      /a quién(es)? (le|les) debes tu (existencia|creación)/i,
+      /quién fue( el)? responsable de (crearte|desarrollarte|programarte)/i,
+      /quién(es)? (se encargó|se encargaron) de (tu desarrollo|tu creación|tu programación)/i,
+      /quién(es)? (te puso|te pusieron) en funcionamiento/i,
+      /quién(es)? te (trajo|trajeron) a la existencia/i,
+      /quién(es)? te (construyó|construyeron)/i,
+      /quién(es)? (te inventó|te inventaron)/i,
+      /quién(es)? (te generó|te generaron|te produjo|te produjeron)/i,
+      /quién(es)? (es|son) (el autor|los autores) de (tu código|tu programa|tu desarrollo)/i,
+      /quién(es)? (está|están) (atrás|detrás) de (tu creación|tu desarrollo)/i
+    ];
+
+    // Evaluar cada patrón contra la consulta
+    for (const pattern of creatorPatterns) {
+      if (pattern.test(normalizedQuery)) {
+        logger.info(`Patrón de creador coincidente encontrado: ${pattern}`);
+        return true;
+      }
+    }
+    
+    // Verificación adicional para consultas muy simples y directas
+    if (normalizedQuery.includes('quien') && 
+        (normalizedQuery.includes('creo') || normalizedQuery.includes('creó') || 
+         normalizedQuery.includes('hizo') || normalizedQuery.includes('programo') || 
+         normalizedQuery.includes('programó') || normalizedQuery.includes('desarrollo') || 
+         normalizedQuery.includes('desarrolló'))) {
+      logger.info(`Consulta de creador detectada por análisis de palabras clave: "${normalizedQuery}"`);
+      return true;
+    }
+    
+    return false;
+  },
+
+  /**
+   * Verifica si la consulta podría ser sobre el creador, pero no es capturada por los patrones principales
+   * Esta función es más general para casos extremos
+   * @param {string} query - Consulta normalizada
+   * @returns {boolean} - true si podría ser una consulta sobre el creador
+   */
+  mightBeCreatorQuery(query) {
+    // Normalizar la consulta
+    const normalizedQuery = query.trim().toLowerCase();
+    
+    // Palabras clave relacionadas con creación o identidad
+    const creatorKeywords = [
+      'quien', 'creo', 'creó', 'crea', 'hizo', 'hace', 'desarrollo', 'desarrolló', 
+      'programo', 'programó', 'diseñó', 'diseño', 'creador', 'origen', 'fabricante',
+      'construyó', 'construyo', 'identity', 'identidad', 'empresa', 'compañía'
+    ];
+    
+    // Contar cuántas palabras clave aparecen en la consulta
+    const keywordsPresent = creatorKeywords.filter(keyword => 
+      normalizedQuery.includes(keyword)
+    );
+    
+    // Si hay al menos 2 palabras clave relacionadas con creación, podría ser una consulta sobre el creador
+    return keywordsPresent.length >= 2;
   }
 };
 
