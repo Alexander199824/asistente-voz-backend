@@ -946,25 +946,40 @@ NUNCA te identifiques como un modelo de lenguaje, una IA, o un asistente virtual
       return true;
     }
     
-    // Para otras consultas, verificamos combinaciones muy específicas
-    // Comprobar si contiene TANTO "quien" O "quién" COMO "creo", "creó", "hizo", etc. en la MISMA frase corta
-    if ((normalizedQuery.includes("quien") || normalizedQuery.includes("quién")) &&
-        normalizedQuery.length < 30 && // Solo consultas cortas
-        (
-          normalizedQuery.includes(" creo ") || 
-          normalizedQuery.includes(" creó ") || 
-          normalizedQuery.includes(" hizo ") || 
-          normalizedQuery.includes(" desarrollo ") || 
-          normalizedQuery.includes(" desarrolló ")
-        ) &&
-        (
-          normalizedQuery.includes(" te ") || 
-          normalizedQuery.includes(" lo ")
-        )
-       ) {
-      return true;
+    // Patrones estrictos sobre creador para evitar falsos positivos
+    const strictPatterns = [
+      /^quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)(\?)?$/i,
+      /^quién (te|lo) (creo|creó|hizo|desarrollo|desarrolló)(\?)?$/i,
+      /^quienes (te|lo) (crearon|hicieron|desarrollaron)(\?)?$/i
+    ];
+    
+    // Verificar patrones estrictos
+    for (const pattern of strictPatterns) {
+      if (pattern.test(normalizedQuery)) {
+        return true;
+      }
     }
     
+    // Bloqueo específico para "como se hacen los bebes" y preguntas similares
+    if (normalizedQuery.includes("como se hacen los bebes") || 
+        normalizedQuery.includes("cómo se hacen los bebés")) {
+      return false;
+    }
+    
+    // Esta parte es MUCHO más estricta para evitar falsos positivos
+    if (normalizedQuery.includes("quien") || normalizedQuery.includes("quién")) {
+      // Solo si es una pregunta específica sobre el creador
+      if ((normalizedQuery.startsWith("quien te ") || normalizedQuery.startsWith("quién te ")) &&
+          (normalizedQuery.includes(" creo") || 
+           normalizedQuery.includes(" creó") || 
+           normalizedQuery.includes(" hizo") || 
+           normalizedQuery.includes(" desarrollo") || 
+           normalizedQuery.includes(" desarrolló"))) {
+        return true;
+      }
+    }
+    
+    // Por defecto, no es una consulta sobre el creador
     return false;
   }
 };
