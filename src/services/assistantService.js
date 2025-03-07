@@ -37,28 +37,36 @@ const AssistantService = {
       }
       
       // BLOQUEO PRIORITARIO: Detección y manejo de consultas sobre el creador
-      // Esta verificación debe ejecutarse antes que cualquier otra
-      if (normalizedQuery.includes('quien') && 
-          (normalizedQuery.includes('creo') || normalizedQuery.includes('creó') || 
-           normalizedQuery.includes('hizo') || normalizedQuery.includes('desarrollo') || 
-           normalizedQuery.includes('desarrolló') || normalizedQuery.toLowerCase() === 'quien eres')) {
-        logger.info(`[BLOQUEO PRIORITARIO] Detectada consulta sobre creador: "${normalizedQuery}"`);
-        const creatorResponse = {
-          response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
-          source: "system_info",
-          confidence: 1.0
-        };
-        
-        // Registrar en el historial
-        await this.logConversation({
-          userId,
-          query: normalizedQuery,
-          response: creatorResponse.response,
-          confidence: creatorResponse.confidence
-        });
-        
-        return creatorResponse;
-      }
+// Esta verificación debe ejecutarse antes que cualquier otra
+const exactCreatorQueries = [
+  "quien eres", 
+  "quien te creo", 
+  "quien te creó", 
+  "quien te hizo", 
+  "quien te desarrollo", 
+  "quien te desarrolló",
+  "quien es tu creador",
+  "de donde vienes"
+];
+
+if (exactCreatorQueries.includes(normalizedQuery)) {
+  logger.info(`[BLOQUEO PRIORITARIO] Detectada consulta exacta sobre creador: "${normalizedQuery}"`);
+  const creatorResponse = {
+    response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+    source: "system_info",
+    confidence: 1.0
+  };
+  
+  // Registrar en el historial
+  await this.logConversation({
+    userId,
+    query: normalizedQuery,
+    response: creatorResponse.response,
+    confidence: creatorResponse.confidence
+  });
+  
+  return creatorResponse;
+}
       
       // 2. Detectar si es un comando de aprendizaje
       if (this.isLearningCommand(normalizedQuery)) {
@@ -116,28 +124,40 @@ const AssistantService = {
         return systemResponse;
       }
       
-      // 5. Verificación EXTRA para consultas sobre el creador que pudieran escapar
-      // a la detección principal en systemInfoService.isSystemInfoQuery
-      if (normalizedQuery.includes('quien') && 
-          (normalizedQuery.includes('creo') || normalizedQuery.includes('creó') || 
-           normalizedQuery.includes('hizo') || normalizedQuery.includes('desarrollo'))) {
-        logger.info(`Detectada consulta secundaria sobre creador: "${normalizedQuery}"`);
-        const systemResponse = {
-          response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Estoy aquí para responder tus preguntas y aprender de nuestras interacciones.",
-          source: "system_info",
-          confidence: 1.0
-        };
-        
-        // Registrar en el historial
-        await this.logConversation({
-          userId,
-          query: normalizedQuery,
-          response: systemResponse.response,
-          confidence: systemResponse.confidence
-        });
-        
-        return systemResponse;
-      }
+    // 5. Verificación SECUNDARIA para consultas sobre el creador que pudieran escapar
+// a la detección principal en systemInfoService.isSystemInfoQuery
+const secondaryCreatorPatterns = [
+  /^quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)(\?)?$/i,
+  /^quienes (te|lo) (crearon|hicieron|desarrollaron)(\?)?$/i,
+  /^quien(es)? te (programo|programó|diseñó|diseño)(\?)?$/i
+];
+
+let isSecondaryCreatorQuery = false;
+for (const pattern of secondaryCreatorPatterns) {
+  if (pattern.test(normalizedQuery)) {
+    isSecondaryCreatorQuery = true;
+    break;
+  }
+}
+
+if (isSecondaryCreatorQuery) {
+  logger.info(`Detectada consulta secundaria sobre creador: "${normalizedQuery}"`);
+  const systemResponse = {
+    response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Estoy aquí para responder tus preguntas y aprender de nuestras interacciones.",
+    source: "system_info",
+    confidence: 1.0
+  };
+  
+  // Registrar en el historial
+  await this.logConversation({
+    userId,
+    query: normalizedQuery,
+    response: systemResponse.response,
+    confidence: systemResponse.confidence
+  });
+  
+  return systemResponse;
+}
       // 4. Detectar y manejar consultas sobre información del sistema
       if (systemInfoService.isSystemInfoQuery(normalizedQuery)) {
         logger.info(`Detectada consulta sobre información del sistema: "${normalizedQuery}"`);

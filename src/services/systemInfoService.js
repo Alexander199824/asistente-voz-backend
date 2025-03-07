@@ -81,7 +81,7 @@ const SystemInfoService = {
    * @returns {boolean} - true si es una consulta sobre el creador
    */
   quickCreatorCheck(query) {
-    // Lista de patrones simples y directos para detección rápida
+    // Lista de patrones exactos para detección rápida
     const simplePatterns = [
       "quien te creo", 
       "quien te creó", 
@@ -96,7 +96,8 @@ const SystemInfoService = {
       "quien eres"
     ];
     
-    return simplePatterns.some(pattern => query === pattern);
+    // Verificar coincidencia exacta (en lugar de solo contener)
+    return simplePatterns.includes(query);
   },
 
   /**
@@ -161,66 +162,28 @@ const SystemInfoService = {
     // Normalizamos la consulta para mejor comparación
     const normalizedQuery = query.trim().toLowerCase();
     
-    // Lista exhaustiva de patrones para detectar preguntas sobre el creador
+    // Lista de patrones específicos para preguntas sobre el creador
     const creatorPatterns = [
-      // Patrones directos - AMPLIADOS Y MEJORADOS
-      /quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)/i,
-      /quienes (te|lo) (crearon|hicieron|desarrollaron)/i,
-      /quien(es)? te (programo|programó|diseñó|diseño)/i,
-      /(cuál|cual) es tu (creador|desarrollador|autor|origen)/i,
-      /quién(es)? te (desarrolló|desarrollo|implementó|implemento)/i,
-      /fuiste (hecho|creado|desarrollado) por/i,
-      /quién(es)? está(n)? (detrás|detras) de (ti|este asistente)/i,
-      /qué (estudiantes|alumnos) te (desarrollaron|crearon)/i,
-      /qué (universidad|institución) te (creó|creo|desarrolló)/i,
-      /quién(es)? te (hizo|fabricó|fabrico|construyó|construyo)/i,
-      /quien fue (el que|quien|la persona que) te/i,
-      /quien te (programo|programó|diseñó|diseño)/i,
-      
-      // NUEVOS PATRONES ADICIONALES
-      /tu (fabricante|constructor|inventor)/i,
-      /tu (equipo de desarrollo|equipo creador|equipo programador)/i,
-      /quién (implementó|construyó) tu (sistema|software|programa|código)/i,
-      /quién te (configuró|armó|constituyó|conformó)/i,
-      /a quién (perteneces|representas)/i,
-      /organización (detrás|detras) de (ti|este asistente|este sistema)/i,
-      
-      // Patrones con formulación diferente
-      /quien (te hizo|te desarrolló|te creó|te programó)/i,
-      /quienes fueron (los que te hicieron|quienes te programaron|tus creadores)/i,
-      /de (quien|quienes) (eres creación|eres producto|provienes)/i,
-      /quién(es)? (son|es) (tu|tus) (creador|creadores|desarrollador|desarrolladores)/i,
-      /quién(es)? (te dio|te dieron) (vida|existencia)/i,
-      /quién(es)? (te concibió|te concibieron|te ideó|te idearon)/i,
-      /quién(es)? (te implementó|te programó|te codificó)/i,
-      /a quién(es)? (le|les) debes tu (existencia|creación)/i,
-      /quién fue( el)? responsable de (crearte|desarrollarte|programarte)/i,
-      /quién(es)? (se encargó|se encargaron) de (tu desarrollo|tu creación|tu programación)/i,
-      /quién(es)? (te puso|te pusieron) en funcionamiento/i,
-      /quién(es)? te (trajo|trajeron) a la existencia/i,
-      /quién(es)? te (construyó|construyeron)/i,
-      /quién(es)? (te inventó|te inventaron)/i,
-      /quién(es)? (te generó|te generaron|te produjo|te produjeron)/i,
-      /quién(es)? (es|son) (el autor|los autores) de (tu código|tu programa|tu desarrollo)/i,
-      /quién(es)? (está|están) (atrás|detrás) de (tu creación|tu desarrollo)/i
+      /^quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)(\?)?$/i,
+      /^quienes (te|lo) (crearon|hicieron|desarrollaron)(\?)?$/i,
+      /^quien(es)? te (programo|programó|diseñó|diseño)(\?)?$/i,
+      /^(cuál|cual) es tu (creador|desarrollador|autor|origen)(\?)?$/i,
+      /^quién(es)? te (desarrolló|desarrollo|implementó|implemento)(\?)?$/i,
+      /^fuiste (hecho|creado|desarrollado) por/i,
+      /^quién(es)? está(n)? (detrás|detras) de (ti|este asistente)(\?)?$/i,
+      /^qué (estudiantes|alumnos) te (desarrollaron|crearon)(\?)?$/i,
+      /^qué (universidad|institución) te (creó|creo|desarrolló)(\?)?$/i,
+      /^quién(es)? te (hizo|fabricó|fabrico|construyó|construyo)(\?)?$/i,
+      /^quien fue (el que|quien|la persona que) te/i,
+      /^quien es tu (creador|desarrollador|programador)(\?)?$/i
     ];
 
-    // Evaluar cada patrón contra la consulta
+    // Evaluar cada patrón contra la consulta completa
     for (const pattern of creatorPatterns) {
       if (pattern.test(normalizedQuery)) {
         logger.info(`Patrón de creador coincidente encontrado: ${pattern}`);
         return true;
       }
-    }
-    
-    // Verificación adicional para consultas muy simples y directas
-    if (normalizedQuery.includes('quien') && 
-        (normalizedQuery.includes('creo') || normalizedQuery.includes('creó') || 
-         normalizedQuery.includes('hizo') || normalizedQuery.includes('programo') || 
-         normalizedQuery.includes('programó') || normalizedQuery.includes('desarrollo') || 
-         normalizedQuery.includes('desarrolló'))) {
-      logger.info(`Consulta de creador detectada por análisis de palabras clave: "${normalizedQuery}"`);
-      return true;
     }
     
     return false;
