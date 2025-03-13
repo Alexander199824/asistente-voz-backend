@@ -797,9 +797,10 @@ logger.error('Error en consulta a IA como último recurso:', aiError);
     normalized = normalized.replace(/\s+/g, ' ');
     
     // Limitar la longitud de la consulta
-    if (normalized.length > config.assistant.maxQueryLength) {
-      normalized = normalized.substring(0, config.assistant.maxQueryLength);
-    }
+    const maxLength = config && config.assistant && config.assistant.maxQueryLength ? config.assistant.maxQueryLength : 500;
+if (normalized.length > maxLength) {
+  normalized = normalized.substring(0, maxLength);
+}
     
     // Eliminar palabras comunes al inicio que no aportan valor semántico
     // pero pueden afectar la coincidencia en la base de conocimientos

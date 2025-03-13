@@ -47,7 +47,7 @@ app.listen(PORT, async () => {
   logger.info(`Servidor iniciado en el puerto ${PORT} (${config.nodeEnv})`);
   
   // Limpiar la base de conocimientos al iniciar
-//  await resetKnowledgeBaseOnStartup();
+ await resetKnowledgeBaseOnStartup();
   
   // Inicialización de servicios
   logger.info('Inicializando servicios...');
