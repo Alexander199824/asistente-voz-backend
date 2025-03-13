@@ -256,7 +256,7 @@ const AIService = {
   /**
    * Optimiza el prompt según el tipo de consulta
    * @param {string} query - Consulta original
-   * @returns {string} - Prompt optimizado
+   * @returns {string} 
    */
   optimizePrompt(query) {
     // VERIFICAR SI ES UNA CONSULTA SOBRE EL CREADOR

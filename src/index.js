@@ -39,18 +39,18 @@ app.use((err, req, res, next) => {
 });
 
 // Limpiar la base de conocimientos al inicio (para pruebas)
-async function resetKnowledgeBaseOnStartup() {
-  try {
-    logger.info('Limpiando base de conocimientos para iniciar desde cero...');
+//async function resetKnowledgeBaseOnStartup() {
+  //try {
+    //logger.info('Limpiando base de conocimientos para iniciar desde cero...');
     // Verificamos primero la conexión a la base de datos
-    await db.query('SELECT NOW()');
+   // await db.query('SELECT NOW()');
     // Luego ejecutamos la limpieza
-    const count = await KnowledgeModel.clearAllKnowledge();
-    logger.info(`Base de conocimientos limpiada. ${count} registros eliminados.`);
-  } catch (error) {
-    logger.error('Error al limpiar base de conocimientos:', error);
-  }
-}
+    //const count = await KnowledgeModel.clearAllKnowledge();
+    //logger.info(`Base de conocimientos limpiada. ${count} registros eliminados.`);
+  //} catch (error) {
+    //logger.error('Error al limpiar base de conocimientos:', error);
+  //}
+//}
 
 // Función para inicializar el sistema de caché
 async function initializeCache() {

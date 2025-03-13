@@ -39,15 +39,7 @@ app.use((err, req, res, next) => {
 });
 
 // Limpiar la base de conocimientos al inicio (para pruebas)
-async function resetKnowledgeBaseOnStartup() {
-  try {
-    logger.info('Limpiando base de conocimientos para iniciar desde cero...');
-    const count = await KnowledgeModel.clearAllKnowledge();
-    logger.info(`Base de conocimientos limpiada. ${count} registros eliminados.`);
-  } catch (error) {
-    logger.error('Error al limpiar base de conocimientos:', error);
-  }
-}
+//
 
 // Iniciar servidor
 const PORT = config.port || 3001;
@@ -55,7 +47,7 @@ app.listen(PORT, async () => {
   logger.info(`Servidor iniciado en el puerto ${PORT} (${config.nodeEnv})`);
   
   // Limpiar la base de conocimientos al iniciar
-  await resetKnowledgeBaseOnStartup();
+//  await resetKnowledgeBaseOnStartup();
   
   // Inicialización de servicios
   logger.info('Inicializando servicios...');

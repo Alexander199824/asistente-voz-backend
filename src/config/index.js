@@ -56,14 +56,21 @@ const config = {
   },
   
   // Configuración del asistente de voz
-  assistant: {
+  aassistant: {
     defaultWakeWord: 'asistente',
     defaultVoiceType: 'standard',
     defaultVoiceSpeed: 1.0,
-    minConfidenceThreshold: 0.7, // Aumentado para exigir mayor confianza
+    minConfidenceThreshold: 0.6, // Reducido para permitir coincidencias más flexibles (era 0.7)
     webSearchEnabled: true,
     learningEnabled: true,
     maxQueryLength: 500, // Limitar la longitud de las consultas
+    
+    // Nueva configuración para priorización de fuentes
+    sourcePriority: {
+      knowledgeBase: 1, // Máxima prioridad para base de conocimientos
+      web: 2,          // Segunda prioridad para búsqueda web
+      ai: 3            // Última prioridad para IA
+    }
   },
   
   // Configuración de búsqueda en la web
@@ -97,9 +104,8 @@ const config = {
     timeoutMs: parseInt(process.env.AI_TIMEOUT_MS) || 8000, // Aumentar timeout
     maxQueryLength: 500,
     minConfidence: 0.8,
-    // Prioridad de la IA: 'fallback' (solo si otras fuentes fallan) 
-    // o 'preferred' (usar IA primero para consultas factuales)
-    priority: process.env.AI_PRIORITY || 'preferred', // Cambiar a 'preferred' para cultura general
+    // Cambiar a 'fallback' para usar IA solo si otras fuentes fallan
+    priority: process.env.AI_PRIORITY || 'fallback', // Cambiar a 'fallback' en lugar de 'preferred'
     // Categorías de consultas para enviar a la IA
     categories: ['factual', 'current_events', 'knowledge', 'general_culture', 'academic'],
     // Configuraciones de caché
@@ -110,7 +116,7 @@ const config = {
     // Gestión de cuota
     quotaManager: {
       enabled: true,
-      maxQueriesPerDay: 50, // Máximo de consultas por día
+      maxQueriesPerDay: 400, // Máximo de consultas por día
       resetPeriod: 'daily' // 'daily', 'weekly', 'monthly'
     }
   },
