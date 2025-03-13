@@ -56,7 +56,7 @@ const config = {
   },
   
   // Configuración del asistente de voz
-  aassistant: {
+  assistant: {
     defaultWakeWord: 'asistente',
     defaultVoiceType: 'standard',
     defaultVoiceSpeed: 1.0,
