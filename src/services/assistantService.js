@@ -826,59 +826,73 @@ if (normalized.length > maxLength) {
  * @param {string} query - Consulta normalizada
  * @returns {boolean} - true si es un comando de aprendizaje
  */
-isLearningCommand(query) {
-  // Patrones explícitos de comando de aprendizaje (los existentes)
-  const explicitPatterns = [
-    /^aprende que (.+) es (.+)$/i,
-    /^aprende (.+) es (.+)$/i,
-    /^aprende (.+) como (.+)$/i,
-    /^ensena que (.+) es (.+)$/i,
-    /^ensena (.+) es (.+)$/i,
-    /^enseña que (.+) es (.+)$/i,
-    /^enseña (.+) es (.+)$/i,
-    /^recuerda que (.+) es (.+)$/i,
-    /^recuerda (.+) es (.+)$/i,
-    /^guarda que (.+) es (.+)$/i,
-    /^guarda (.+) es (.+)$/i,
-    /^memoriza que (.+) es (.+)$/i
-  ];
-  
-  // Nuevos patrones más naturales
-  const naturalPatterns = [
-    // Patrones de tipo conversacional
-    /(?:quiero|necesito|me gustaría|quisiera) que (aprendas|sepas|recuerdes|guardes) que (.+) es (.+)$/i,
-    /(?:debes|deberías|podrías|puedes) (aprender|saber|recordar|guardar) que (.+) es (.+)$/i,
-    /(.+) significa (.+)$/i,
-    /(.+) se define como (.+)$/i,
-    /(.+) es igual a (.+)$/i,
-    /(.+) se refiere a (.+)$/i,
-    /la definición de (.+) es (.+)$/i,
+  isLearningCommand(query) {
+    // Patrones explícitos de comando de aprendizaje (los existentes)
+    const explicitPatterns = [
+      /^aprende que (.+) es (.+)$/i,
+      /^aprende (.+) es (.+)$/i,
+      /^aprende (.+) como (.+)$/i,
+      /^ensena que (.+) es (.+)$/i,
+      /^ensena (.+) es (.+)$/i,
+      /^enseña que (.+) es (.+)$/i,
+      /^enseña (.+) es (.+)$/i,
+      /^recuerda que (.+) es (.+)$/i,
+      /^recuerda (.+) es (.+)$/i,
+      /^guarda que (.+) es (.+)$/i,
+      /^guarda (.+) es (.+)$/i,
+      /^memoriza que (.+) es (.+)$/i
+    ];
     
-    // Patrones de corrección
-    /^no,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
-    /^incorrecto,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
-    /^te equivocas,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
+    // Verificar patrones explícitos primero (deben comenzar con las palabras clave)
+    for (const pattern of explicitPatterns) {
+      if (pattern.test(query)) {
+        return true;
+      }
+    }
     
-    // Patrón simplificado de asociación directa
-    /^(.+): (.+)$/i
-  ];
-  
-  // Verificar patrones explícitos primero
-  for (const pattern of explicitPatterns) {
-    if (pattern.test(query)) {
-      return true;
+    // Patrones naturales - NO DEBEN ACTIVARSE PARA PREGUNTAS
+    // Antes de verificar estos patrones, descartar si es una pregunta
+    if (query.startsWith("qué") || query.startsWith("que") || 
+        query.startsWith("cuál") || query.startsWith("cual") ||
+        query.startsWith("cómo") || query.startsWith("como") ||
+        query.startsWith("quién") || query.startsWith("quien") ||
+        query.startsWith("dónde") || query.startsWith("donde") ||
+        query.startsWith("cuándo") || query.startsWith("cuando") || 
+        query.endsWith("?") || query.endsWith("¿")) {
+      // Si es una pregunta, NO es un comando de aprendizaje
+      return false;
     }
-  }
-  
-  // Verificar patrones naturales
-  for (const pattern of naturalPatterns) {
-    if (pattern.test(query)) {
-      return true;
+    
+    // Solo evaluar los patrones naturales si no es una pregunta
+    const naturalPatterns = [
+      // Patrones de tipo conversacional
+      /(?:quiero|necesito|me gustaría|quisiera) que (aprendas|sepas|recuerdes|guardes) que (.+) es (.+)$/i,
+      /(?:debes|deberías|podrías|puedes) (aprender|saber|recordar|guardar) que (.+) es (.+)$/i,
+      
+      // Ya no consideramos estos patrones para evitar colisiones con preguntas:
+      // /(.+) significa (.+)$/i,
+      // /(.+) se define como (.+)$/i,
+      // /(.+) es igual a (.+)$/i,
+      // /(.+) se refiere a (.+)$/i,
+      // /la definición de (.+) es (.+)$/i,
+      
+      // Patrones de corrección
+      /^no,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
+      /^incorrecto,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
+      /^te equivocas,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
+      
+      // Patrón simplificado de asociación directa
+      /^(.+): (.+)$/i
+    ];
+    
+    for (const pattern of naturalPatterns) {
+      if (pattern.test(query)) {
+        return true;
+      }
     }
-  }
-  
-  return false;
-},
+    
+    return false;
+  },
 
   /**
    * Verifica si una consulta es un saludo
