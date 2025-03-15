@@ -3,146 +3,146 @@ const { logger } = require('../config');
 
 // Modelo para la base de conocimientos
 const KnowledgeModel = {
-/**
- * Busca respuestas basadas en una consulta (versión mejorada)
- * @param {string} query - Consulta del usuario
- * @param {number} confidence - Umbral de confianza (0-1)
- * @param {string} userId - ID de usuario (opcional)
- * @returns {Promise<Array>} - Lista de posibles respuestas
- */
-async findAnswers(query, confidence = 0.65, userId = null) {
-  try {
-    // Normalizamos la consulta (minúsculas, sin puntuación excesiva)
-    const normalizedQuery = query.toLowerCase().trim();
-    
-    // Versión mejorada con múltiples estrategias de búsqueda
-    const queryText = `
-      WITH ranked_results AS (
-        SELECT 
-          k.*,
-          SIMILARITY(k.query, $1) as similarity,
-          -- Añadir ranking adicional para coincidencias parciales
-          CASE 
-            WHEN LOWER(k.query) = LOWER($1) THEN 5         -- Coincidencia exacta (ignorando mayúsculas/minúsculas)
-            WHEN k.query ILIKE $1 THEN 4                   -- Coincidencia exacta (ignorando mayúsculas/minúsculas y acentos)
-            WHEN k.query ILIKE $1 || '%' THEN 3            -- Empieza con
-            WHEN k.query ILIKE '%' || $1 THEN 3            -- Termina con
-            WHEN k.query ILIKE '%' || $1 || '%' THEN 2     -- Contiene
-            ELSE 0
-          END as match_type,
-          -- Añadir puntuación para coincidencia de palabras clave
-          (
-            SELECT COUNT(*) 
-            FROM unnest(string_to_array($1, ' ')) as word 
-            WHERE LENGTH(word) > 2 AND k.query ILIKE '%' || word || '%'
-          ) as keyword_matches
-        FROM 
-          knowledge_base k
-        WHERE 
-          (SIMILARITY(k.query, $1) > $2 OR 
-           k.query ILIKE '%' || $1 || '%' OR
-           $1 ILIKE '%' || k.query || '%' OR
-           EXISTS (
-             SELECT 1 
-             FROM unnest(string_to_array($1, ' ')) as word 
-             WHERE LENGTH(word) > 3 AND k.query ILIKE '%' || word || '%'
-           ))
-          AND (k.user_id = $3 OR k.user_id IS NULL OR k.is_public = true)
-      )
-      SELECT * FROM ranked_results
-      ORDER BY 
-        match_type DESC,        -- Priorizar tipo de coincidencia
-        similarity DESC,        -- Luego por similitud textual
-        keyword_matches DESC,   -- Luego por coincidencias de palabras clave
-        confidence DESC,        -- Luego por confianza
-        times_used DESC         -- Finalmente por uso
-      LIMIT 10;
-    `;
-    
-    const result = await db.query(queryText, [normalizedQuery, confidence, userId]);
-    
-    // Aplicar filtrado de resultados más inteligente
-    const filteredResults = result.rows.filter(row => {
-      // Verificar si hay coincidencia exacta de palabras clave
-      const queryWords = normalizedQuery.split(/\s+/);
-      const rowQueryWords = row.query.toLowerCase().split(/\s+/);
-      
-      // Verificar coincidencia exacta (ignorando mayúsculas/minúsculas)
-      if (row.query.toLowerCase() === normalizedQuery) {
-        return true;
-      }
-      
-      // Calcular cuántas palabras clave coinciden (solo palabras significativas)
-      const matchingWords = queryWords.filter(word => 
-        word.length > 2 && rowQueryWords.some(rowWord => rowWord.includes(word))
-      );
-      
-      // Verificar si hay palabras clave significativas en común
-      const keywordMatch = matchingWords.length > 0;
-      
-      // Si la consulta es muy corta (1-2 palabras), ser más permisivo
-      if (queryWords.length <= 2 && keywordMatch) {
-        return true;
-      }
-      
-      // Criterios para considerar un resultado válido:
-      return (
-        // Alta similitud (> 0.70)
-        row.similarity > 0.70 ||
-        // O tipo de coincidencia directo (exacta, empieza con, termina con)
-        row.match_type >= 2 ||
-        // O coincidencia de palabras clave con similitud decente
-        (keywordMatch && row.similarity > 0.55) ||
-        // O múltiples palabras clave coincidentes (> 1/3 de las palabras)
-        (queryWords.length > 2 && matchingWords.length >= queryWords.length / 3)
-      );
-    });
-    
-    if (filteredResults.length > 0 && filteredResults[0].similarity > 0.55) {
-      // Incrementamos el contador de uso para la mejor coincidencia
-      await this.incrementUsageCount(filteredResults[0].id);
-      
-      // Loguear para depuración
-      logger.info(`Encontrada coincidencia en BD: "${filteredResults[0].query}" (similitud: ${filteredResults[0].similarity.toFixed(2)})`);
-    }
-    
-    return filteredResults;
-  } catch (error) {
-    logger.error('Error al buscar respuestas en la base de conocimientos:', error);
-    
-    // En caso de error, intentar con una consulta más simple
+  /**
+   * Busca respuestas basadas en una consulta (versión mejorada)
+   * @param {string} query - Consulta del usuario
+   * @param {number} confidence - Umbral de confianza (0-1)
+   * @param {string} userId - ID de usuario (opcional)
+   * @returns {Promise<Array>} - Lista de posibles respuestas
+   */
+  async findAnswers(query, confidence = 0.65, userId = null) {
     try {
-      const simpleQueryText = `
-        SELECT 
-          k.*,
-          SIMILARITY(k.query, $1) as similarity
-        FROM 
-          knowledge_base k
-        WHERE 
-          k.query ILIKE '%' || $1 || '%' OR
-          $1 ILIKE '%' || k.query || '%'
-          AND (k.user_id = $2 OR k.user_id IS NULL OR k.is_public = true)
+      // Normalizamos la consulta (minúsculas, sin puntuación excesiva)
+      const normalizedQuery = query.toLowerCase().trim();
+      
+      // Versión mejorada con múltiples estrategias de búsqueda
+      const queryText = `
+        WITH ranked_results AS (
+          SELECT 
+            k.*,
+            SIMILARITY(k.query, $1) as similarity,
+            -- Añadir ranking adicional para coincidencias parciales
+            CASE 
+              WHEN LOWER(k.query) = LOWER($1) THEN 5         -- Coincidencia exacta (ignorando mayúsculas/minúsculas)
+              WHEN k.query ILIKE $1 THEN 4                   -- Coincidencia exacta (ignorando mayúsculas/minúsculas y acentos)
+              WHEN k.query ILIKE $1 || '%' THEN 3            -- Empieza con
+              WHEN k.query ILIKE '%' || $1 THEN 3            -- Termina con
+              WHEN k.query ILIKE '%' || $1 || '%' THEN 2     -- Contiene
+              ELSE 0
+            END as match_type,
+            -- Añadir puntuación para coincidencia de palabras clave
+            (
+              SELECT COUNT(*) 
+              FROM unnest(string_to_array($1, ' ')) as word 
+              WHERE LENGTH(word) > 2 AND k.query ILIKE '%' || word || '%'
+            ) as keyword_matches
+          FROM 
+            knowledge_base k
+          WHERE 
+            (SIMILARITY(k.query, $1) > $2 OR 
+             k.query ILIKE '%' || $1 || '%' OR
+             $1 ILIKE '%' || k.query || '%' OR
+             EXISTS (
+               SELECT 1 
+               FROM unnest(string_to_array($1, ' ')) as word 
+               WHERE LENGTH(word) > 3 AND k.query ILIKE '%' || word || '%'
+             ))
+            AND (k.user_id = $3 OR k.user_id IS NULL OR k.is_public = true)
+        )
+        SELECT * FROM ranked_results
         ORDER BY 
-          confidence DESC,
-          times_used DESC
-        LIMIT 5;
+          match_type DESC,        -- Priorizar tipo de coincidencia
+          similarity DESC,        -- Luego por similitud textual
+          keyword_matches DESC,   -- Luego por coincidencias de palabras clave
+          confidence DESC,        -- Luego por confianza
+          times_used DESC         -- Finalmente por uso
+        LIMIT 10;
       `;
       
-      const backupResult = await db.query(simpleQueryText, [query.toLowerCase().trim(), userId]);
-      return backupResult.rows;
-    } catch (backupError) {
-      logger.error('Error en consulta de respaldo:', backupError);
-      return [];
+      const result = await db.query(queryText, [normalizedQuery, confidence, userId]);
+      
+      // Aplicar filtrado de resultados más inteligente
+      const filteredResults = result.rows.filter(row => {
+        // Verificar si hay coincidencia exacta de palabras clave
+        const queryWords = normalizedQuery.split(/\s+/);
+        const rowQueryWords = row.query.toLowerCase().split(/\s+/);
+        
+        // Verificar coincidencia exacta (ignorando mayúsculas/minúsculas)
+        if (row.query.toLowerCase() === normalizedQuery) {
+          return true;
+        }
+        
+        // Calcular cuántas palabras clave coinciden (solo palabras significativas)
+        const matchingWords = queryWords.filter(word => 
+          word.length > 2 && rowQueryWords.some(rowWord => rowWord.includes(word))
+        );
+        
+        // Verificar si hay palabras clave significativas en común
+        const keywordMatch = matchingWords.length > 0;
+        
+        // Si la consulta es muy corta (1-2 palabras), ser más permisivo
+        if (queryWords.length <= 2 && keywordMatch) {
+          return true;
+        }
+        
+        // Criterios para considerar un resultado válido:
+        return (
+          // Alta similitud (> 0.70)
+          row.similarity > 0.70 ||
+          // O tipo de coincidencia directo (exacta, empieza con, termina con)
+          row.match_type >= 2 ||
+          // O coincidencia de palabras clave con similitud decente
+          (keywordMatch && row.similarity > 0.55) ||
+          // O múltiples palabras clave coincidentes (> 1/3 de las palabras)
+          (queryWords.length > 2 && matchingWords.length >= queryWords.length / 3)
+        );
+      });
+      
+      if (filteredResults.length > 0 && filteredResults[0].similarity > 0.55) {
+        // Incrementamos el contador de uso para la mejor coincidencia
+        await this.incrementUsageCount(filteredResults[0].id);
+        
+        // Loguear para depuración
+        logger.info(`Encontrada coincidencia en BD: "${filteredResults[0].query}" (similitud: ${filteredResults[0].similarity.toFixed(2)})`);
+      }
+      
+      return filteredResults;
+    } catch (error) {
+      logger.error('Error al buscar respuestas en la base de conocimientos:', error);
+      
+      // En caso de error, intentar con una consulta más simple
+      try {
+        const simpleQueryText = `
+          SELECT 
+            k.*,
+            SIMILARITY(k.query, $1) as similarity
+          FROM 
+            knowledge_base k
+          WHERE 
+            k.query ILIKE '%' || $1 || '%' OR
+            $1 ILIKE '%' || k.query || '%'
+            AND (k.user_id = $2 OR k.user_id IS NULL OR k.is_public = true)
+          ORDER BY 
+            confidence DESC,
+            times_used DESC
+          LIMIT 5;
+        `;
+        
+        const backupResult = await db.query(simpleQueryText, [query.toLowerCase().trim(), userId]);
+        return backupResult.rows;
+      } catch (backupError) {
+        logger.error('Error en consulta de respaldo:', backupError);
+        return [];
+      }
     }
-  }
-},
+  },
   
   /**
    * Añade nuevo conocimiento a la base de datos
    * @param {Object} knowledge - Objeto con la información del conocimiento
    * @returns {Promise<Object>} - Conocimiento añadido
    */
-  async addKnowledge({ query, response, context = null, source = 'user', confidence = 1.0, userId = null, isPublic = false }) {
+  async addKnowledge({ query, response, context = null, source = 'user', confidence = 1.0, userId = null, isPublic = false, is_ai_generated = false }) {
     try {
       // Normalizamos la consulta
       const normalizedQuery = query.toLowerCase().trim();
@@ -165,8 +165,10 @@ async findAnswers(query, confidence = 0.65, userId = null) {
             response = $1, 
             context = $2,
             confidence = $3,
+            is_ai_generated = $4,
+            last_verified_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
-          WHERE id = $4
+          WHERE id = $5
           RETURNING *;
         `;
         
@@ -174,6 +176,7 @@ async findAnswers(query, confidence = 0.65, userId = null) {
           response, 
           context,
           Math.max(confidence, existingEntry.rows[0].confidence),
+          is_ai_generated,
           existingEntry.rows[0].id
         ]);
         
@@ -190,9 +193,11 @@ async findAnswers(query, confidence = 0.65, userId = null) {
           source, 
           confidence, 
           user_id, 
-          is_public
+          is_public,
+          is_ai_generated,
+          last_verified_at
         ) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
         RETURNING *;
       `;
       
@@ -203,7 +208,8 @@ async findAnswers(query, confidence = 0.65, userId = null) {
         source,
         confidence,
         userId,
-        isPublic
+        isPublic,
+        is_ai_generated
       ]);
       
       logger.info(`Nuevo conocimiento añadido: "${normalizedQuery}"`);
@@ -317,7 +323,7 @@ async findAnswers(query, confidence = 0.65, userId = null) {
    * @param {Object} updates - Campos a actualizar
    * @returns {Promise<Object>} - Conocimiento actualizado
    */
-  async updateKnowledge(id, { response, context, source, confidence }) {
+  async updateKnowledge(id, { response, context, source, confidence, is_ai_generated, updated_at }) {
     try {
       let updateFields = [];
       let queryParams = [];
@@ -347,6 +353,16 @@ async findAnswers(query, confidence = 0.65, userId = null) {
         queryParams.push(confidence);
         paramCounter++;
       }
+      
+      // Nuevos campos
+      if (is_ai_generated !== undefined) {
+        updateFields.push(`is_ai_generated = $${paramCounter}`);
+        queryParams.push(is_ai_generated);
+        paramCounter++;
+      }
+      
+      // Siempre actualizar last_verified_at cuando se modifica
+      updateFields.push(`last_verified_at = CURRENT_TIMESTAMP`);
       
       // Actualizar timestamp
       updateFields.push(`updated_at = CURRENT_TIMESTAMP`);

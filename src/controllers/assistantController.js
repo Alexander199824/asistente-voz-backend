@@ -12,7 +12,7 @@ const AssistantController = {
    */
   async processQuery(req, res) {
     try {
-      const { query } = req.body;
+      const { query, options } = req.body;
       
       if (!query) {
         return res.status(400).json({
@@ -24,8 +24,8 @@ const AssistantController = {
       // Obtener el ID de usuario del token (si existe)
       const userId = req.user ? req.user.id : null;
       
-      // Procesar la consulta
-      const result = await AssistantService.processQuery(query, userId);
+      // Procesar la consulta - ahora incluye opciones para confirmaciones
+      const result = await AssistantService.processQuery(query, userId, options || {});
       
       return res.json({
         success: true,

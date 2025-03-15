@@ -7,6 +7,7 @@ const { authenticateJWT, optionalAuthJWT } = require('../utils/authMiddleware');
  * @route POST /api/assistant/query
  * @desc Procesa una consulta del usuario
  * @access Public/Private (con autenticación opcional)
+ * @param {Object} body.options - Opciones adicionales para confirmaciones
  */
 router.post('/query', optionalAuthJWT, AssistantController.processQuery);
 

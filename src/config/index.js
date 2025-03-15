@@ -61,8 +61,8 @@ const config = {
     defaultVoiceType: 'standard',
     defaultVoiceSpeed: 1.0,
     minConfidenceThreshold: 0.6, // Reducido para permitir coincidencias más flexibles (era 0.7)
-    webSearchEnabled: true,
-    learningEnabled: true,
+    webSearchEnabled: true,      // Habilitado para permitir búsquedas web
+    learningEnabled: true,       // Habilitado para permitir aprendizaje
     maxQueryLength: 500, // Limitar la longitud de las consultas
     
     // Nueva configuración para priorización de fuentes
@@ -77,6 +77,9 @@ const config = {
   webSearch: {
     maxResults: 3,
     timeoutMs: 5000,
+    provider: process.env.WEB_SEARCH_PROVIDER || 'duckduckgo', // duckduckgo, google, bing
+    apiKey: process.env.WEB_SEARCH_API_KEY,
+    cx: process.env.GOOGLE_SEARCH_CX // Solo para búsquedas de Google
   },
   
   // Paths
@@ -100,6 +103,7 @@ const config = {
     provider: process.env.AI_PROVIDER || 'openai', // openai, anthropic, huggingface
     fallbackProvider: process.env.AI_FALLBACK_PROVIDER || 'huggingface', // Proveedor alternativo en caso de error
     apiKey: process.env.AI_API_KEY,
+    fallbackApiKey: process.env.AI_FALLBACK_API_KEY,
     model: process.env.AI_MODEL || 'gpt-4o-mini', // Usar modelo más potente
     timeoutMs: parseInt(process.env.AI_TIMEOUT_MS) || 8000, // Aumentar timeout
     maxQueryLength: 500,

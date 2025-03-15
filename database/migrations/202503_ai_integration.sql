@@ -27,6 +27,20 @@ CREATE TABLE IF NOT EXISTS knowledge_updates (
 -- Crear índice para las actualizaciones de conocimiento
 CREATE INDEX IF NOT EXISTS knowledge_updates_knowledge_id_idx ON knowledge_updates(knowledge_id);
 
+-- Crear tabla de caché para IA si no existe
+CREATE TABLE IF NOT EXISTS ia_cache (
+  id SERIAL PRIMARY KEY,
+  query TEXT NOT NULL,
+  query_hash TEXT NOT NULL,
+  response TEXT NOT NULL, 
+  source VARCHAR(50),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(query_hash)
+);
+
+-- Crear índice para búsquedas rápidas en caché
+CREATE INDEX IF NOT EXISTS query_hash_idx ON ia_cache(query_hash);
+
 -- Añadir columna de rol a la tabla de usuarios
 ALTER TABLE users 
 ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';

@@ -8,131 +8,134 @@ const knowledgeResponseService = require('../services/knowledgeResponseService')
 const factualKnowledgeService = require('../services/factualKnowledgeService');
 const systemInfoService = require('../services/systemInfoService');
 const AIService = require('./aiService');
+const db = require('../config/database');
 
 /**
  * Servicio principal del asistente de voz
  */
 const AssistantService = {
   /**
- * Detecta la intención del usuario en una consulta
- * @param {string} query - Consulta normalizada
- * @returns {Object} - Información sobre la intención detectada
- */
-detectUserIntent(query) {
-  // Normalizar para análisis
-  const normalizedQuery = query.toLowerCase().trim();
-  
-  // Posibles intenciones
-  const intents = {
-    // Intención de aprendizaje (enseñarle algo al sistema)
-    learning: {
-      patterns: [
-        /(?:aprende|aprender|enseña|enseñar|memoriza|memorizar|guarda|guardar|recuerda|recordar)/i,
-        /(?:quiero|necesito|me gustaría|quisiera) que (?:aprendas|sepas|recuerdes|guardes|memorices)/i,
-        /(?:debes|deberías|podrías|puedes) (?:aprender|saber|recordar|guardar|memorizar)/i,
-        /(?:significa|se define como|es igual a|se refiere a|es básicamente)/i,
-        /^no,? .+ (?:es|significa|equivale a|se refiere a) .+$/i,
-        /^incorrecto,? .+ (?:es|significa|equivale a|se refiere a) .+$/i,
-        /^te equivocas,? .+ (?:es|significa|equivale a|se refiere a) .+$/i,
-        /^la definición de .+ es .+$/i,
-        /^(.+): (.+)$/i,
-        /^cuando (?:te pregunten|pregunte|alguien pregunte) (?:sobre|acerca de|por) (.+), (?:di|responde|contesta) (.+)$/i
-      ],
-      confidence: 0,
-      details: null
-    },
+   * Detecta la intención del usuario en una consulta
+   * @param {string} query - Consulta normalizada
+   * @returns {Object} - Información sobre la intención detectada
+   */
+  detectUserIntent(query) {
+    // Normalizar para análisis
+    const normalizedQuery = query.toLowerCase().trim();
     
-    // Intención de pregunta (solicitar información)
-    question: {
-      patterns: [
-        /^(?:qué|que|cuál|cual|quién|quien|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|por qué|por que|para qué|para que)/i,
-        /^(?:sabes|conoces|me puedes decir|puedes decirme|dime|explícame|explica|cuéntame|cuenta)/i,
-        /^(?:qué|que) (?:es|son|significa|significan) /i,
-        /^(?:quién|quien) (?:es|fue|son|fueron) /i,
-        /^(?:cómo|como) (?:se|se puede|puedo|funciona|hacer|se hace) /i,
-        /\?$/
-      ],
-      confidence: 0,
-      details: null
-    },
+    // Posibles intenciones
+    const intents = {
+      // Intención de aprendizaje (enseñarle algo al sistema)
+      learning: {
+        patterns: [
+          /(?:aprende|aprender|enseña|enseñar|memoriza|memorizar|guarda|guardar|recuerda|recordar)/i,
+          /(?:quiero|necesito|me gustaría|quisiera) que (?:aprendas|sepas|recuerdes|guardes|memorices)/i,
+          /(?:debes|deberías|podrías|puedes) (?:aprender|saber|recordar|guardar|memorizar)/i,
+          /(?:significa|se define como|es igual a|se refiere a|es básicamente)/i,
+          /^no,? .+ (?:es|significa|equivale a|se refiere a) .+$/i,
+          /^incorrecto,? .+ (?:es|significa|equivale a|se refiere a) .+$/i,
+          /^te equivocas,? .+ (?:es|significa|equivale a|se refiere a) .+$/i,
+          /^la definición de .+ es .+$/i,
+          /^(.+): (.+)$/i,
+          /^cuando (?:te pregunten|pregunte|alguien pregunte) (?:sobre|acerca de|por) (.+), (?:di|responde|contesta) (.+)$/i
+        ],
+        confidence: 0,
+        details: null
+      },
+      
+      // Intención de pregunta (solicitar información)
+      question: {
+        patterns: [
+          /^(?:qué|que|cuál|cual|quién|quien|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|por qué|por que|para qué|para que)/i,
+          /^(?:sabes|conoces|me puedes decir|puedes decirme|dime|explícame|explica|cuéntame|cuenta)/i,
+          /^(?:qué|que) (?:es|son|significa|significan) /i,
+          /^(?:quién|quien) (?:es|fue|son|fueron) /i,
+          /^(?:cómo|como) (?:se|se puede|puedo|funciona|hacer|se hace) /i,
+          /\?$/
+        ],
+        confidence: 0,
+        details: null
+      },
+      
+      // Intención de corrección (corregir al sistema)
+      correction: {
+        patterns: [
+          /^(?:no|incorrecto|falso|equivocado|error|erróneo|te equivocas|eso no es cierto|eso es falso)/i,
+          /^(?:en realidad|de hecho|realmente) (?:no|es incorrecto)/i,
+          /^(?:la respuesta correcta|lo correcto|lo verdadero) (?:es|sería|debería ser)/i,
+          /^(?:deberías|debes) (?:saber|aprender|recordar|memorizar) que/i
+        ],
+        confidence: 0,
+        details: null
+      },
+      
+      // Intención de saludo/despedida
+      greeting: {
+        patterns: [
+          /^(?:hola|saludos|buenos días|buenas tardes|buenas noches|buen día|hey|hi|hello)/i,
+          /^(?:adiós|adios|chao|hasta luego|nos vemos|bye|goodbye|hasta pronto|hasta mañana)/i
+        ],
+        confidence: 0,
+        details: null
+      }
+    };
     
-    // Intención de corrección (corregir al sistema)
-    correction: {
-      patterns: [
-        /^(?:no|incorrecto|falso|equivocado|error|erróneo|te equivocas|eso no es cierto|eso es falso)/i,
-        /^(?:en realidad|de hecho|realmente) (?:no|es incorrecto)/i,
-        /^(?:la respuesta correcta|lo correcto|lo verdadero) (?:es|sería|debería ser)/i,
-        /^(?:deberías|debes) (?:saber|aprender|recordar|memorizar) que/i
-      ],
-      confidence: 0,
-      details: null
-    },
-    
-    // Intención de saludo/despedida
-    greeting: {
-      patterns: [
-        /^(?:hola|saludos|buenos días|buenas tardes|buenas noches|buen día|hey|hi|hello)/i,
-        /^(?:adiós|adios|chao|hasta luego|nos vemos|bye|goodbye|hasta pronto|hasta mañana)/i
-      ],
-      confidence: 0,
-      details: null
-    }
-  };
-  
-  // Evaluar cada intención
-  for (const [intentName, intent] of Object.entries(intents)) {
-    // Revisar coincidencia con cada patrón
-    for (const pattern of intent.patterns) {
-      if (pattern.test(normalizedQuery)) {
-        // Incrementar la confianza por cada patrón que coincide
-        intent.confidence += 0.25;
-        
-        // Capturar detalles específicos si hay grupos de captura
-        const match = normalizedQuery.match(pattern);
-        if (match && match.length > 1) {
-          intent.details = match.slice(1).filter(Boolean);
+    // Evaluar cada intención
+    for (const [intentName, intent] of Object.entries(intents)) {
+      // Revisar coincidencia con cada patrón
+      for (const pattern of intent.patterns) {
+        if (pattern.test(normalizedQuery)) {
+          // Incrementar la confianza por cada patrón que coincide
+          intent.confidence += 0.25;
+          
+          // Capturar detalles específicos si hay grupos de captura
+          const match = normalizedQuery.match(pattern);
+          if (match && match.length > 1) {
+            intent.details = match.slice(1).filter(Boolean);
+          }
         }
+      }
+      
+      // Limitar la confianza a un máximo de 1.0
+      intent.confidence = Math.min(intent.confidence, 1.0);
+    }
+    
+    // Determinar la intención principal
+    let primaryIntent = null;
+    let highestConfidence = 0;
+    
+    for (const [intentName, intent] of Object.entries(intents)) {
+      if (intent.confidence > highestConfidence) {
+        highestConfidence = intent.confidence;
+        primaryIntent = {
+          name: intentName,
+          confidence: intent.confidence,
+          details: intent.details
+        };
       }
     }
     
-    // Limitar la confianza a un máximo de 1.0
-    intent.confidence = Math.min(intent.confidence, 1.0);
-  }
-  
-  // Determinar la intención principal
-  let primaryIntent = null;
-  let highestConfidence = 0;
-  
-  for (const [intentName, intent] of Object.entries(intents)) {
-    if (intent.confidence > highestConfidence) {
-      highestConfidence = intent.confidence;
+    // Si no hay intención clara, asumir pregunta
+    if (!primaryIntent || primaryIntent.confidence < 0.25) {
       primaryIntent = {
-        name: intentName,
-        confidence: intent.confidence,
-        details: intent.details
+        name: 'question',
+        confidence: 0.5,
+        details: null
       };
     }
-  }
-  
-  // Si no hay intención clara, asumir pregunta
-  if (!primaryIntent || primaryIntent.confidence < 0.25) {
-    primaryIntent = {
-      name: 'question',
-      confidence: 0.5,
-      details: null
-    };
-  }
-  
-  logger.info(`Intención detectada: ${primaryIntent.name} (confianza: ${primaryIntent.confidence.toFixed(2)})`);
-  return primaryIntent;
-},
+    
+    logger.info(`Intención detectada: ${primaryIntent.name} (confianza: ${primaryIntent.confidence.toFixed(2)})`);
+    return primaryIntent;
+  },
+
   /**
    * Procesa una consulta del usuario y devuelve una respuesta
    * @param {string} query - Consulta del usuario
    * @param {string} userId - ID del usuario (opcional)
+   * @param {Object} options - Opciones adicionales (confirmar búsqueda/actualización)
    * @returns {Promise<Object>} - Objeto con la respuesta y metadatos
    */
-  async processQuery(query, userId = null) {
+  async processQuery(query, userId = null, options = {}) {
     try {
       // 1. Normalizar la consulta
       const normalizedQuery = this.normalizeQuery(query);
@@ -149,70 +152,112 @@ detectUserIntent(query) {
         };
       }
 
+      // Verificar si es una respuesta a una pregunta anterior sobre buscar en la web
+      if (options.awaitingWebSearchConfirmation && 
+          (normalizedQuery.match(/^s[ií]/i) || normalizedQuery.match(/^yes/i) || 
+           normalizedQuery.includes('busca') || normalizedQuery.includes('web'))) {
+        
+        logger.info(`Usuario confirmó búsqueda web para: "${options.originalQuery}"`);
+        
+        // Ejecutar búsqueda web + IA
+        return await this.executeWebAndAISearch(options.originalQuery, userId);
+      }
+      
+      // Verificar si es una respuesta negativa a buscar en la web
+      if (options.awaitingWebSearchConfirmation && 
+          (normalizedQuery.match(/^no/i) || normalizedQuery.includes('no busques'))) {
+        
+        return {
+          response: "De acuerdo, no buscaré en fuentes externas. Si deseas enseñarme sobre este tema, puedes usar el comando 'aprende que [pregunta] es [respuesta]'.",
+          source: "system",
+          confidence: 1.0
+        };
+      }
+      
+      // Verificar si es una respuesta a una pregunta anterior sobre actualizar información
+      if (options.awaitingUpdateConfirmation && 
+          (normalizedQuery.match(/^s[ií]/i) || normalizedQuery.match(/^yes/i) || 
+           normalizedQuery.includes('actual') || normalizedQuery.includes('updat'))) {
+        
+        logger.info(`Usuario confirmó actualización para: "${options.originalQuery}"`);
+        
+        // Ejecutar actualización con IA
+        return await this.executeKnowledgeUpdate(options.knowledgeId, options.originalQuery, userId);
+      }
+      
+      // Verificar si es una respuesta negativa a actualizar información
+      if (options.awaitingUpdateConfirmation && 
+          (normalizedQuery.match(/^no/i) || normalizedQuery.includes('no actualices'))) {
+        
+        return {
+          response: "De acuerdo, mantendré la información actual sin actualizarla.",
+          source: "system",
+          confidence: 1.0
+        };
+      }
+
       // NUEVO: Detectar la intención del usuario
-const userIntent = this.detectUserIntent(normalizedQuery);
+      const userIntent = this.detectUserIntent(normalizedQuery);
 
-// Procesar según la intención detectada
-if (userIntent.name === 'learning' && userIntent.confidence >= 0.5) {
-  logger.info(`Detectada intención de aprendizaje con alta confianza (${userIntent.confidence.toFixed(2)})`);
-  return await this.handleLearningCommand(normalizedQuery, userId);
-}
+      // Procesar según la intención detectada
+      if (userIntent.name === 'learning' && userIntent.confidence >= 0.5) {
+        logger.info(`Detectada intención de aprendizaje con alta confianza (${userIntent.confidence.toFixed(2)})`);
+        return await this.handleLearningCommand(normalizedQuery, userId);
+      }
 
-if (userIntent.name === 'greeting' && userIntent.confidence >= 0.5) {
-  logger.info(`Detectado saludo/despedida con alta confianza (${userIntent.confidence.toFixed(2)})`);
-  const greetingResponse = greetingService.getGreetingResponse(normalizedQuery);
-  
-  // Registrar en el historial
-  await this.logConversation({
-    userId,
-    query: normalizedQuery,
-    response: greetingResponse.response,
-    confidence: greetingResponse.confidence
-  });
-  
-  return greetingResponse;
-}
+      if (userIntent.name === 'greeting' && userIntent.confidence >= 0.5) {
+        logger.info(`Detectado saludo/despedida con alta confianza (${userIntent.confidence.toFixed(2)})`);
+        const greetingResponse = greetingService.getGreetingResponse(normalizedQuery);
+        
+        // Registrar en el historial
+        await this.logConversation({
+          userId,
+          query: normalizedQuery,
+          response: greetingResponse.response,
+          confidence: greetingResponse.confidence
+        });
+        
+        return greetingResponse;
+      }
 
-if (userIntent.name === 'correction' && userIntent.confidence >= 0.6) {
-  logger.info(`Detectada corrección con alta confianza (${userIntent.confidence.toFixed(2)})`);
-  // Intentar extraer un formato de aprendizaje de la corrección
-  const correctionText = normalizedQuery.replace(/^(no|incorrecto|falso|te equivocas)[,.]?\s+/i, '');
-  return await this.handleLearningCommand(correctionText, userId);
-}
-
-
+      if (userIntent.name === 'correction' && userIntent.confidence >= 0.6) {
+        logger.info(`Detectada corrección con alta confianza (${userIntent.confidence.toFixed(2)})`);
+        // Intentar extraer un formato de aprendizaje de la corrección
+        const correctionText = normalizedQuery.replace(/^(no|incorrecto|falso|te equivocas)[,.]?\s+/i, '');
+        return await this.handleLearningCommand(correctionText, userId);
+      }
       
       // BLOQUEO PRIORITARIO: Detección y manejo de consultas sobre el creador
-// Esta verificación debe ejecutarse antes que cualquier otra
-const exactCreatorQueries = [
-  "quien eres", 
-  "quien te creo", 
-  "quien te creó", 
-  "quien te hizo", 
-  "quien te desarrollo", 
-  "quien te desarrolló",
-  "quien es tu creador",
-  "de donde vienes"
-];
+      // Esta verificación debe ejecutarse antes que cualquier otra
+      const exactCreatorQueries = [
+        "quien eres", 
+        "quien te creo", 
+        "quien te creó", 
+        "quien te hizo", 
+        "quien te desarrollo", 
+        "quien te desarrolló",
+        "quien es tu creador",
+        "de donde vienes"
+      ];
 
-if (exactCreatorQueries.includes(normalizedQuery)) {
-  logger.info(`[BLOQUEO PRIORITARIO] Detectada consulta exacta sobre creador: "${normalizedQuery}"`);
-  const creatorResponse = {
-    response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
-    source: "system_info",
-    confidence: 1.0
-  };
-  
-  // Registrar en el historial
-  await this.logConversation({
-    userId,
-    query: normalizedQuery,
-    response: creatorResponse.response,
-    confidence: creatorResponse.confidence
-  });
-  
-  return creatorResponse;
-}
+      if (exactCreatorQueries.includes(normalizedQuery)) {
+        logger.info(`[BLOQUEO PRIORITARIO] Detectada consulta exacta sobre creador: "${normalizedQuery}"`);
+        const creatorResponse = {
+          response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Ellos me desarrollaron como un asistente virtual capaz de responder preguntas y aprender de las interacciones con los usuarios.",
+          source: "system_info",
+          confidence: 1.0
+        };
+        
+        // Registrar en el historial
+        await this.logConversation({
+          userId,
+          query: normalizedQuery,
+          response: creatorResponse.response,
+          confidence: creatorResponse.confidence
+        });
+        
+        return creatorResponse;
+      }
       
       // 2. Detectar si es un comando de aprendizaje
       if (this.isLearningCommand(normalizedQuery)) {
@@ -252,12 +297,30 @@ if (exactCreatorQueries.includes(normalizedQuery)) {
         
         return systemResponse;
       }
+      
+      // 5. Verificación SECUNDARIA para consultas sobre el creador que pudieran escapar
+      // a la detección principal en systemInfoService.isSystemInfoQuery
+      const secondaryCreatorPatterns = [
+        /^quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)(\?)?$/i,
+        /^quienes (te|lo) (crearon|hicieron|desarrollaron)(\?)?$/i,
+        /^quien(es)? te (programo|programó|diseñó|diseño)(\?)?$/i
+      ];
 
-      // 4. PRIORIDAD ALTA: Detectar y manejar consultas sobre información del sistema
-      // Esta verificación DEBE ir antes de las consultas de IA y tiene prioridad absoluta
-      if (systemInfoService.isSystemInfoQuery(normalizedQuery)) {
-        logger.info(`Detectada consulta sobre información del sistema: "${normalizedQuery}"`);
-        const systemResponse = systemInfoService.getSystemInfo(normalizedQuery);
+      let isSecondaryCreatorQuery = false;
+      for (const pattern of secondaryCreatorPatterns) {
+        if (pattern.test(normalizedQuery)) {
+          isSecondaryCreatorQuery = true;
+          break;
+        }
+      }
+
+      if (isSecondaryCreatorQuery) {
+        logger.info(`Detectada consulta secundaria sobre creador: "${normalizedQuery}"`);
+        const systemResponse = {
+          response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Estoy aquí para responder tus preguntas y aprender de nuestras interacciones.",
+          source: "system_info",
+          confidence: 1.0
+        };
         
         // Registrar en el historial
         await this.logConversation({
@@ -270,57 +333,7 @@ if (exactCreatorQueries.includes(normalizedQuery)) {
         return systemResponse;
       }
       
-    // 5. Verificación SECUNDARIA para consultas sobre el creador que pudieran escapar
-// a la detección principal en systemInfoService.isSystemInfoQuery
-const secondaryCreatorPatterns = [
-  /^quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)(\?)?$/i,
-  /^quienes (te|lo) (crearon|hicieron|desarrollaron)(\?)?$/i,
-  /^quien(es)? te (programo|programó|diseñó|diseño)(\?)?$/i
-];
-
-let isSecondaryCreatorQuery = false;
-for (const pattern of secondaryCreatorPatterns) {
-  if (pattern.test(normalizedQuery)) {
-    isSecondaryCreatorQuery = true;
-    break;
-  }
-}
-
-if (isSecondaryCreatorQuery) {
-  logger.info(`Detectada consulta secundaria sobre creador: "${normalizedQuery}"`);
-  const systemResponse = {
-    response: "Fui creado por estudiantes de Ingeniería en Sistemas de la Universidad Mariano Gálvez de Guatemala, sede Salamá. Estoy aquí para responder tus preguntas y aprender de nuestras interacciones.",
-    source: "system_info",
-    confidence: 1.0
-  };
-  
-  // Registrar en el historial
-  await this.logConversation({
-    userId,
-    query: normalizedQuery,
-    response: systemResponse.response,
-    confidence: systemResponse.confidence
-  });
-  
-  return systemResponse;
-}
-      // 4. Detectar y manejar consultas sobre información del sistema
-      if (systemInfoService.isSystemInfoQuery(normalizedQuery)) {
-        logger.info(`Detectada consulta sobre información del sistema: "${normalizedQuery}"`);
-        const systemResponse = systemInfoService.getSystemInfo(normalizedQuery);
-        
-        // Registrar en el historial
-        await this.logConversation({
-          userId,
-          query: normalizedQuery,
-          response: systemResponse.response,
-          confidence: systemResponse.confidence
-        });
-        
-        return systemResponse;
-      }
-      
-      // 5. Detectar y manejar cálculos matemáticos
+      // 6. Detectar y manejar cálculos matemáticos
       if (this.isCalculationQuery(normalizedQuery)) {
         logger.info(`Detectada consulta matemática: "${normalizedQuery}"`);
         const calculationResult = this.handleCalculationQuery(normalizedQuery);
@@ -337,7 +350,7 @@ if (isSecondaryCreatorQuery) {
         }
       }
       
-      // 6. Detectar y manejar consultas de programación
+      // 7. Detectar y manejar consultas de programación
       if (this.isProgrammingQuery(normalizedQuery)) {
         logger.info(`Detectada consulta de programación: "${normalizedQuery}"`);
         // Primero intentar con la API de Stack Overflow
@@ -406,7 +419,7 @@ if (isSecondaryCreatorQuery) {
         }
       }
       
-      // 7. Detectar y manejar consultas factuales directas
+      // 8. Detectar y manejar consultas factuales directas
       if (this.isDirectFactualQuery(normalizedQuery)) {
         logger.info(`Detectada consulta factual directa: "${normalizedQuery}"`);
         const factualResponse = factualKnowledgeService.getDirectFactualResponse(normalizedQuery);
@@ -427,7 +440,7 @@ if (isSecondaryCreatorQuery) {
         }
       }
       
-      // 8. Determinar si es una pregunta factual o candidata para IA
+      // 9. Determinar si es una pregunta factual o candidata para IA
       const isFactual = knowledgeResponseService.isFactualQuestion(normalizedQuery);
       const isAICandidate = AIService.isAIQuery(normalizedQuery);
 
@@ -435,25 +448,24 @@ if (isSecondaryCreatorQuery) {
       logger.info(`Análisis de consulta: isFactual=${isFactual}, isAICandidate=${isAICandidate}`);
       logger.info(`Estado de IA: enabled=${config.ai && config.ai.enabled}, priority=${config.ai ? config.ai.priority : 'no configurado'}`);
 
-     // 9. PRIMERA BÚSQUEDA: Base de conocimientos - MEJORADA
-logger.info(`PASO 1: Buscando respuesta en base de conocimientos para: "${normalizedQuery}"`);
+      // 10. PRIMERA BÚSQUEDA: Base de conocimientos - MEJORADA
+      logger.info(`PASO 1: Buscando respuesta en base de conocimientos para: "${normalizedQuery}"`);
 
-let knowledgeResults = [];
-try {
-  // Usar un umbral de confianza más bajo para mejorar la coincidencia
-  knowledgeResults = await KnowledgeModel.findAnswers(
-    normalizedQuery, 
-    config.assistant.minConfidenceThreshold || 0.6, // Umbral reducido (antes era 0.7)
-    userId
-  );
-  logger.info(`Resultados de base de conocimientos: ${knowledgeResults.length} encontrados`);
-  
-  // Logging detallado para diagnóstico
-  if (knowledgeResults.length > 0) {
-    knowledgeResults.forEach((result, index) => {
-      logger.info(`Coincidencia #${index + 1}: "${result.query}" (similitud: ${result.similarity.toFixed(2)}, confianza: ${result.confidence.toFixed(2)})`);
-    });
-  
+      let knowledgeResults = [];
+      try {
+        // Usar un umbral de confianza más bajo para mejorar la coincidencia
+        knowledgeResults = await KnowledgeModel.findAnswers(
+          normalizedQuery, 
+          config.assistant.minConfidenceThreshold || 0.6, // Umbral reducido (antes era 0.7)
+          userId
+        );
+        logger.info(`Resultados de base de conocimientos: ${knowledgeResults.length} encontrados`);
+        
+        // Logging detallado para diagnóstico
+        if (knowledgeResults.length > 0) {
+          knowledgeResults.forEach((result, index) => {
+            logger.info(`Coincidencia #${index + 1}: "${result.query}" (similitud: ${result.similarity.toFixed(2)}, confianza: ${result.confidence.toFixed(2)})`);
+          });
         }
       } catch (knowledgeError) {
         logger.error('Error al buscar en la base de conocimientos:', knowledgeError);
@@ -467,51 +479,27 @@ try {
         // Verificar si la respuesta parece desactualizada y la consulta es candidata para IA
         const potentiallyOutdated = AIService.isPotentiallyOutdated(bestMatch.response);
         
-        if (config.ai && config.ai.enabled && isAICandidate && potentiallyOutdated) {
-          logger.info(`La respuesta existente parece desactualizada, consultando IA para actualización`);
-          try {
-            // Intentar obtener información actualizada de la IA
-            const aiResult = await AIService.getAIResponse(normalizedQuery);
-            
-            if (aiResult && aiResult.answer) {
-              logger.info(`Respuesta actualizada recibida de IA: "${aiResult.answer}"`);
-              
-              // Actualizar el conocimiento existente con la nueva respuesta
-              try {
-                await KnowledgeModel.updateKnowledge(bestMatch.id, {
-                  response: aiResult.answer,
-                  confidence: Math.max(bestMatch.confidence, 0.9),
-                  source: aiResult.source || 'IA actualizada',
-                  is_ai_generated: true,
-                  updated_at: new Date()
-                });
-                logger.info(`Conocimiento actualizado en base de datos, ID: ${bestMatch.id}`);
-              } catch (updateError) {
-                logger.error('Error al actualizar conocimiento con IA:', updateError);
-              }
-              
-              // Registrar en el historial
-              await this.logConversation({
-                userId,
-                query: normalizedQuery,
-                response: aiResult.answer,
-                knowledgeId: bestMatch.id,
-                confidence: 0.9
-              });
-              
-              return {
-                response: aiResult.answer,
-                source: aiResult.source || 'IA actualizada',
-                confidence: 0.9,
-                knowledgeId: bestMatch.id,
-                isAI: true
-              };
-            } else {
-              logger.warn('No se obtuvo respuesta actualizada de IA, usando respuesta existente');
-            }
-          } catch (aiError) {
-            logger.error('Error al verificar actualización con IA:', aiError);
-          }
+        // NUEVO: Preguntar al usuario si desea actualizar la información
+        if (potentiallyOutdated && (isAICandidate || isFactual)) {
+          const response = bestMatch.response;
+          
+          // Registrar en el historial
+          await this.logConversation({
+            userId,
+            query: normalizedQuery,
+            response: response + "\n\n¿Deseas que busque información más actualizada sobre este tema?",
+            knowledgeId: bestMatch.id,
+            confidence: bestMatch.confidence
+          });
+          
+          return {
+            response: response + "\n\n¿Deseas que busque información más actualizada sobre este tema?",
+            source: bestMatch.source,
+            confidence: bestMatch.confidence,
+            knowledgeId: bestMatch.id,
+            awaitingUpdateConfirmation: true,
+            originalQuery: normalizedQuery
+          };
         }
         
         // Verificar si la respuesta necesita ser refinada (para preguntas factuales)
@@ -545,213 +533,281 @@ try {
         logger.info('No se encontraron coincidencias en la base de conocimientos');
       }
       
-      if (config.assistant.webSearchEnabled) {
-        logger.info(`PASO 2: Intentando búsqueda web para: "${normalizedQuery}"`);
-        try {
-          const webResult = await webSearchService.search(normalizedQuery);
-          
-          if (webResult && webResult.answer) {
-            logger.info(`Resultado encontrado en búsqueda web desde: ${webResult.source}`);
-            
-            // Verificar si la respuesta web es relevante
-            if (!this.isWebResponseRelevant(normalizedQuery, webResult.answer)) {
-              logger.warn(`Respuesta web descartada por irrelevante: "${webResult.answer.substring(0, 100)}..."`);
-            } else {
-              // Refinar la respuesta si es una pregunta factual
-              let finalAnswer = webResult.answer;
-              if (isFactual) {
-                logger.info('Refinando respuesta web factual');
-                finalAnswer = knowledgeResponseService.refineFactualResponse(normalizedQuery, finalAnswer);
-              }
-              
-              // Corregir problemas de codificación
-              finalAnswer = this.fixEncoding(finalAnswer);
-              
-              // Verificar si existe una consulta similar antes de guardar
-              const existingEntries = await KnowledgeModel.findAnswers(
-                normalizedQuery,
-                0.75, // Umbral más bajo para verificar duplicados
-                userId
-              );
-              
-              let knowledgeId = null;
-              // Guardar el resultado de la web en la base de conocimientos
-              try {
-                if (existingEntries.length > 0 && existingEntries[0].similarity > 0.8) {
-                  // Si existe una entrada muy similar, actualizarla en lugar de crear una nueva
-                  const existingEntry = existingEntries[0];
-                  logger.info(`Encontrada entrada similar existente para resultado web (similitud: ${existingEntry.similarity.toFixed(2)}), actualizando en lugar de crear nueva`);
-                  
-                  await KnowledgeModel.updateKnowledge(existingEntry.id, {
-                    response: finalAnswer,
-                    context: webResult.context || null,
-                    source: 'web',
-                    confidence: Math.max(existingEntry.confidence, 0.85),
-                    updated_at: new Date()
-                  });
-                  
-                  knowledgeId = existingEntry.id;
-                  logger.info(`Conocimiento existente actualizado con respuesta web, ID: ${knowledgeId}`);
-                } else {
-                  // Guardar como nuevo conocimiento
-                  const newKnowledge = await KnowledgeModel.addKnowledge({
-                    query: normalizedQuery,
-                    response: finalAnswer,
-                    context: webResult.context || null,
-                    source: 'web',
-                    confidence: 0.85,
-                    userId: null,
-                    isPublic: true,
-                    created_at: new Date(),
-                    updated_at: new Date()
-                  });
-                  
-                  knowledgeId = newKnowledge.id;
-                  logger.info(`Resultado web guardado en base de conocimientos, ID: ${knowledgeId}`);
-                }
-              } catch (knowledgeAddError) {
-                logger.error('Error al guardar conocimiento de web:', knowledgeAddError);
-              }
-              
-              // Registrar en el historial
-              await this.logConversation({
-                userId,
-                query: normalizedQuery,
-                response: finalAnswer,
-                knowledgeId: knowledgeId,
-                confidence: 0.85
-              });
-              
-              return {
-                response: finalAnswer,
-                source: 'web',
-                confidence: 0.85,
-                knowledgeId: knowledgeId,
-                attribution: webResult.source
-              };
-            }
-          } else {
-            logger.info('Búsqueda web sin resultados relevantes');
-          }
-        } catch (error) {
-          logger.error('Error en la búsqueda web:', error);
-        }
-      } else {
-        logger.info('Búsqueda web deshabilitada en configuración');
-      }
-      
-      
-      // 11. TERCERA BÚSQUEDA: IA como último recurso
-     // Solo usar IA como último recurso si la prioridad está configurada como 'fallback'
-if (config.ai && config.ai.enabled && (isFactual || isAICandidate) && 
-(config.ai.priority === 'fallback' || config.assistant.sourcePriority?.ai === 3)) {
-logger.info(`PASO 3: Consultando IA como último recurso para: "${normalizedQuery}"`);
-try {
-const aiResult = await AIService.getAIResponse(normalizedQuery);
+      // NUEVO: Preguntar al usuario si desea buscar en la web o proporcionar la información
+logger.info('No se encontró información en BD. Preguntando al usuario sobre cómo proceder.');
 
-if (aiResult && aiResult.answer) {
-  logger.info(`Respuesta de último recurso recibida de IA: "${aiResult.answer}"`);
-  
-  // Guardar el resultado de IA en la base de conocimientos
-  let newKnowledge;
-  try {
-    // Verificar si ya existe una entrada similar antes de crear nueva
-    const existingEntries = await KnowledgeModel.findAnswers(
-      normalizedQuery,
-      0.75, // Umbral más bajo para duplicados
-      userId
-    );
-    
-    if (existingEntries.length > 0 && existingEntries[0].similarity > 0.8) {
-      // Actualizar entrada existente
-      const existingEntry = existingEntries[0];
-      await KnowledgeModel.updateKnowledge(existingEntry.id, {
-        response: aiResult.answer,
-        context: aiResult.context || null,
-        source: aiResult.source || 'IA',
-        confidence: 0.9,
-        is_ai_generated: true,
-        updated_at: new Date()
-      });
-      newKnowledge = await KnowledgeModel.getById(existingEntry.id);
-    } else {
-      // Crear nueva entrada
-      newKnowledge = await KnowledgeModel.addKnowledge({
-        query: normalizedQuery,
-        response: aiResult.answer,
-        context: aiResult.context || null,
-        source: aiResult.source || 'IA',
-        confidence: 0.85,
-        userId: null,
-        isPublic: true,
-        is_ai_generated: true,
-        created_at: new Date(),
-        updated_at: new Date()
-      });
-    }
-    logger.info(`Respuesta de IA (último recurso) guardada en base de conocimientos, ID: ${newKnowledge ? newKnowledge.id : 'error'}`);
-  } catch (knowledgeAddError) {
-    logger.error('Error al guardar conocimiento de IA:', knowledgeAddError);
-    
-    // Intento alternativo en caso de fallo
-    try {
-      newKnowledge = await KnowledgeModel.addKnowledge({
-        query: normalizedQuery,
-        response: aiResult.answer,
-        source: 'IA fallback',
-        confidence: 0.85,
-        isPublic: true
-      });
-    } catch (fallbackError) {
-      logger.error('También falló método alternativo:', fallbackError);
-    }
-  }
-  
-  // Registrar en el historial
-  await this.logConversation({
-    userId,
-    query: normalizedQuery,
-    response: aiResult.answer,
-    knowledgeId: newKnowledge ? newKnowledge.id : null,
-    confidence: 0.85
-  });
-  
-  return {
-    response: aiResult.answer,
-    source: aiResult.source || 'IA',
-    confidence: 0.85,
-    knowledgeId: newKnowledge ? newKnowledge.id : null,
-    isAI: true
-  };
-} else {
-  logger.warn('No se obtuvo respuesta de IA como último recurso');
-}
-} catch (aiError) {
-logger.error('Error en consulta a IA como último recurso:', aiError);
-}
-}
-      
-      // 12. Si todo lo demás falla, dar una respuesta genérica
-      logger.info(`No se encontró respuesta para "${normalizedQuery}", respondiendo con mensaje por defecto`);
-      const defaultResponse = "Lo siento, no tengo una respuesta para eso. ¿Quieres enseñarme diciendo 'aprende que [pregunta] es [respuesta]'?";
-      
-      // Registrar en el historial
-      await this.logConversation({
-        userId,
-        query: normalizedQuery,
-        response: defaultResponse,
-        confidence: 0.1
-      });
-      
-      return {
-        response: defaultResponse,
-        source: "system",
-        confidence: 0.1
-      };
+const messageResponse = "No tengo información sobre esto en mi base de conocimientos. Puedes elegir entre: \n\n1. Que busque en otras fuentes como internet o inteligencia artificial \n2. Proporcionarme tú la información usando 'aprende que [pregunta] es [respuesta]'";
+
+// Registrar en el historial
+await this.logConversation({
+  userId,
+  query: normalizedQuery,
+  response: messageResponse,
+  confidence: 0.7
+});
+
+return {
+  response: messageResponse,
+  source: "system",
+  confidence: 0.7,
+  awaitingWebSearchConfirmation: true,
+  originalQuery: normalizedQuery
+};
     } catch (error) {
       logger.error('Error al procesar consulta:', error);
       return {
         response: "Lo siento, ocurrió un error al procesar tu consulta. Por favor, intenta de nuevo.",
+        source: "error",
+        confidence: 0
+      };
+    }
+  },
+
+  /**
+   * Ejecuta una búsqueda web y de IA para actualizar el conocimiento
+   * @param {string} query - Consulta original
+   * @param {string} userId - ID del usuario
+   * @returns {Promise<Object>} - Respuesta con información actualizada
+   */
+  async executeWebAndAISearch(query, userId) {
+    try {
+      logger.info(`Ejecutando búsqueda web y de IA para: "${query}"`);
+      
+      // 1. Intentar búsqueda en la web
+      let webResult = null;
+      try {
+        webResult = await webSearchService.search(query);
+      } catch (webError) {
+        logger.error('Error en búsqueda web:', webError);
+      }
+      
+      // 2. Intentar obtener respuesta de IA
+      let aiResult = null;
+      try {
+        if (config.ai && config.ai.enabled) {
+          aiResult = await AIService.getAIResponse(query);
+        }
+      } catch (aiError) {
+        logger.error('Error en consulta a IA:', aiError);
+      }
+      
+      // 3. Determinar la mejor respuesta
+      let finalResult = null;
+      
+      if (webResult && aiResult) {
+        // Si tenemos ambas respuestas, elegir la más completa o relevante
+        const webAnswerLength = webResult.answer ? webResult.answer.length : 0;
+        const aiAnswerLength = aiResult.answer ? aiResult.answer.length : 0;
+        
+        finalResult = (aiAnswerLength > webAnswerLength * 1.2) ? aiResult : webResult;
+      } else if (webResult) {
+        finalResult = webResult;
+      } else if (aiResult) {
+        finalResult = aiResult;
+      } else {
+        // Si ambas búsquedas fallaron
+        return {
+          response: "Lo siento, no pude encontrar información relevante sobre esto en fuentes externas.",
+          source: "system",
+          confidence: 0.5
+        };
+      }
+      
+      // 4. Guardar el conocimiento en la base de datos
+      const answer = finalResult.answer;
+      const source = finalResult.source || 'búsqueda externa';
+      
+      let knowledgeId = null;
+      try {
+        // Verificar primero si ya existe una entrada similar
+        const existingEntries = await KnowledgeModel.findAnswers(
+          query,
+          0.75,
+          userId
+        );
+        
+        if (existingEntries.length > 0 && existingEntries[0].similarity > 0.8) {
+          // Actualizar conocimiento existente
+          await KnowledgeModel.updateKnowledge(existingEntries[0].id, {
+            response: answer,
+            source: source,
+            context: finalResult.context || null,
+            confidence: 0.85,
+            is_ai_generated: !!aiResult,
+            updated_at: new Date()
+          });
+          
+          knowledgeId = existingEntries[0].id;
+          logger.info(`Conocimiento existente actualizado: ID ${knowledgeId}`);
+        } else {
+          // Crear nuevo conocimiento
+          const newKnowledge = await KnowledgeModel.addKnowledge({
+            query: query,
+            response: answer,
+            source: source,
+            context: finalResult.context || null,
+            confidence: 0.85,
+            userId: null, // Público
+            isPublic: true,
+            is_ai_generated: !!aiResult
+          });
+          
+          knowledgeId = newKnowledge.id;
+          logger.info(`Nuevo conocimiento guardado en BD: ID ${knowledgeId}`);
+        }
+      } catch (dbError) {
+        logger.error('Error al guardar conocimiento en BD:', dbError);
+      }
+      
+      // 5. Registrar en el historial y retornar
+      await this.logConversation({
+        userId,
+        query,
+        response: answer,
+        knowledgeId,
+        confidence: 0.85
+      });
+      
+      return {
+        response: answer,
+        source: source,
+        confidence: 0.85,
+        knowledgeId,
+        context: finalResult.context || null
+      };
+    } catch (error) {
+      logger.error('Error en búsqueda externa:', error);
+      return {
+        response: "Lo siento, ocurrió un error al buscar información. Por favor, intenta de nuevo más tarde.",
+        source: "error",
+        confidence: 0
+      };
+    }
+  },
+
+  /**
+   * Ejecuta una actualización de conocimiento usando IA
+   * @param {string} knowledgeId - ID del conocimiento a actualizar
+   * @param {string} query - Consulta original
+   * @param {string} userId - ID del usuario
+   * @returns {Promise<Object>} - Respuesta con información actualizada
+   */
+  async executeKnowledgeUpdate(knowledgeId, query, userId) {
+    try {
+      logger.info(`Ejecutando actualización de conocimiento ID ${knowledgeId} para: "${query}"`);
+      
+      // 1. Obtener el conocimiento existente
+      const existingKnowledge = await KnowledgeModel.getById(knowledgeId);
+      if (!existingKnowledge) {
+        return {
+          response: "Lo siento, no pude encontrar el conocimiento a actualizar.",
+          source: "system",
+          confidence: 0.5
+        };
+      }
+      
+      // 2. Obtener información actualizada
+      let updatedInfo = null;
+      
+      // Intentar primero con IA por ser generalmente más completa
+      if (config.ai && config.ai.enabled) {
+        try {
+          const aiResult = await AIService.getAIResponse(query);
+          if (aiResult && aiResult.answer) {
+            updatedInfo = {
+              answer: aiResult.answer,
+              source: aiResult.source || 'IA',
+              isAI: true
+            };
+          }
+        } catch (aiError) {
+          logger.error('Error al obtener información actualizada de IA:', aiError);
+        }
+      }
+      
+      // Si falla la IA, intentar con búsqueda web
+      if (!updatedInfo) {
+        try {
+          const webResult = await webSearchService.search(query);
+          if (webResult && webResult.answer) {
+            updatedInfo = {
+              answer: webResult.answer,
+              source: webResult.source || 'Web',
+              isAI: false
+            };
+          }
+        } catch (webError) {
+          logger.error('Error al obtener información actualizada de web:', webError);
+        }
+      }
+      
+      // Si no pudimos obtener información actualizada
+      if (!updatedInfo) {
+        return {
+          response: "Lo siento, no pude encontrar información actualizada sobre este tema.",
+          source: "system",
+          confidence: 0.6
+        };
+      }
+      
+      // 3. Actualizar el conocimiento en la base de datos
+      try {
+        await KnowledgeModel.updateKnowledge(knowledgeId, {
+          response: updatedInfo.answer,
+          source: updatedInfo.source,
+          confidence: Math.max(existingKnowledge.confidence, 0.85),
+          is_ai_generated: updatedInfo.isAI,
+          updated_at: new Date()
+        });
+        
+        logger.info(`Conocimiento ID ${knowledgeId} actualizado correctamente`);
+        
+        // 4. Registrar actualización en historial si existe tabla para ello
+        try {
+          await db.query(
+            `INSERT INTO knowledge_updates (knowledge_id, previous_response, new_response, update_reason, source)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [
+              knowledgeId,
+              existingKnowledge.response,
+              updatedInfo.answer,
+              'Actualización solicitada por usuario',
+              updatedInfo.source
+            ]
+          );
+        } catch (historyError) {
+          logger.warn('No se pudo registrar historial de actualización:', historyError);
+        }
+      } catch (updateError) {
+        logger.error(`Error al actualizar conocimiento en BD:`, updateError);
+        return {
+          response: "Lo siento, ocurrió un error al actualizar la información. Sin embargo, puedo proporcionarte la información actualizada que encontré: \n\n" + updatedInfo.answer,
+          source: updatedInfo.source,
+          confidence: 0.7
+        };
+      }
+      
+      // 5. Registrar en el historial de conversaciones y retornar
+      const finalResponse = `He actualizado mi conocimiento sobre "${query}":\n\n${updatedInfo.answer}`;
+      
+      await this.logConversation({
+        userId,
+        query,
+        response: finalResponse,
+        knowledgeId,
+        confidence: 0.9
+      });
+      
+      return {
+        response: finalResponse,
+        source: updatedInfo.source,
+        confidence: 0.9,
+        knowledgeId
+      };
+    } catch (error) {
+      logger.error('Error en actualización de conocimiento:', error);
+      return {
+        response: "Lo siento, ocurrió un error al actualizar la información. Por favor, intenta de nuevo más tarde.",
         source: "error",
         confidence: 0
       };
@@ -798,9 +854,9 @@ logger.error('Error en consulta a IA como último recurso:', aiError);
     
     // Limitar la longitud de la consulta
     const maxLength = config && config.assistant && config.assistant.maxQueryLength ? config.assistant.maxQueryLength : 500;
-if (normalized.length > maxLength) {
-  normalized = normalized.substring(0, maxLength);
-}
+    if (normalized.length > maxLength) {
+      normalized = normalized.substring(0, maxLength);
+    }
     
     // Eliminar palabras comunes al inicio que no aportan valor semántico
     // pero pueden afectar la coincidencia en la base de conocimientos
@@ -822,15 +878,19 @@ if (normalized.length > maxLength) {
   },
   
   /**
- * Verifica si una consulta es un comando de aprendizaje (detección mejorada)
- * @param {string} query - Consulta normalizada
- * @returns {boolean} - true si es un comando de aprendizaje
- */
+   * Verifica si una consulta es un comando de aprendizaje (detección mejorada)
+   * @param {string} query - Consulta normalizada
+   * @returns {boolean} - true si es un comando de aprendizaje
+   */
   isLearningCommand(query) {
     // Patrones explícitos de comando de aprendizaje (los existentes)
     const explicitPatterns = [
       /^aprende que (.+) es (.+)$/i,
+      /^aprende que (.+) significa (.+)$/i,
+      /^aprende que (.+) son (.+)$/i,
       /^aprende (.+) es (.+)$/i,
+      /^aprende (.+) significa (.+)$/i,
+      /^aprende (.+) son (.+)$/i,
       /^aprende (.+) como (.+)$/i,
       /^ensena que (.+) es (.+)$/i,
       /^ensena (.+) es (.+)$/i,
@@ -972,251 +1032,250 @@ if (normalized.length > maxLength) {
   },
   
   /**
- * Procesa un comando de aprendizaje con mejor detección
- * @param {string} query - Consulta completa
- * @param {string} userId - ID del usuario
- * @returns {Promise<Object>} - Resultado del procesamiento
- */
-async handleLearningCommand(query, userId) {
-  try {
-    // Verificar si el aprendizaje está habilitado
-    if (!config.assistant.learningEnabled) {
-      return {
-        response: "Lo siento, el aprendizaje está deshabilitado actualmente.",
-        source: "system",
-        confidence: 1.0
-      };
-    }
-    
-    // Extraer la pregunta y respuesta del comando
-    let question, answer;
-    
-    // Patrones explícitos (los existentes)
-    const explicitPatterns = [
-      /^aprende que (.+) es (.+)$/i,
-      /^aprende que (.+) significa (.+)$/i,
-      /^aprende que (.+) son (.+)$/i,
-      /^aprende (.+) es (.+)$/i,
-      /^aprende (.+) significa (.+)$/i,
-      /^aprende (.+) son (.+)$/i,
-      /^aprende (.+) como (.+)$/i,
-      /^ensena que (.+) es (.+)$/i,
-      /^ensena (.+) es (.+)$/i,
-      /^enseña que (.+) es (.+)$/i,
-      /^enseña (.+) es (.+)$/i,
-      /^recuerda que (.+) es (.+)$/i,
-      /^recuerda (.+) es (.+)$/i,
-      /^guarda que (.+) es (.+)$/i,
-      /^guarda (.+) es (.+)$/i,
-      /^memoriza que (.+) es (.+)$/i
-    ];
-    
-    // Nuevos patrones (conversacionales)
-    const naturalPatterns = [
-      // Patrones conversacionales - grupo 2, 3
-      {
-        regex: /(?:quiero|necesito|me gustaría|quisiera) que (?:aprendas|sepas|recuerdes|guardes) que (.+) es (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      {
-        regex: /(?:debes|deberías|podrías|puedes) (?:aprender|saber|recordar|guardar) que (.+) es (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      // Definiciones - grupo 1, 2
-      {
-        regex: /(.+) significa (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      {
-        regex: /(.+) se define como (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      {
-        regex: /(.+) es igual a (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      {
-        regex: /(.+) se refiere a (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      {
-        regex: /la definición de (.+) es (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      // Correcciones - grupo 1, 2
-      {
-        regex: /^no,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      {
-        regex: /^incorrecto,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      {
-        regex: /^te equivocas,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
-      },
-      // Formato simplificado - grupo 1, 2
-      {
-        regex: /^(.+): (.+)$/i,
-        questionIndex: 1,
-        answerIndex: 2
+   * Procesa un comando de aprendizaje con mejor detección
+   * @param {string} query - Consulta completa
+   * @param {string} userId - ID del usuario
+   * @returns {Promise<Object>} - Resultado del procesamiento
+   */
+  async handleLearningCommand(query, userId) {
+    try {
+      // Verificar si el aprendizaje está habilitado
+      if (!config.assistant.learningEnabled) {
+        return {
+          response: "Lo siento, el aprendizaje está deshabilitado actualmente.",
+          source: "system",
+          confidence: 1.0
+        };
       }
-    ];
-    
-    // Intentar patrones explícitos primero
-    for (const pattern of explicitPatterns) {
-      const match = query.match(pattern);
-      if (match) {
-        question = match[1].trim();
-        answer = match[2].trim();
-        break;
-      }
-    }
-    
-    // Si no hay coincidencia, intentar los patrones naturales
-    if (!question || !answer) {
-      for (const { regex, questionIndex, answerIndex } of naturalPatterns) {
-        const match = query.match(regex);
+      
+      // Extraer la pregunta y respuesta del comando
+      let question, answer;
+      
+      // Patrones explícitos (los existentes)
+      const explicitPatterns = [
+        /^aprende que (.+) es (.+)$/i,
+        /^aprende que (.+) significa (.+)$/i,
+        /^aprende que (.+) son (.+)$/i,
+        /^aprende (.+) es (.+)$/i,
+        /^aprende (.+) significa (.+)$/i,
+        /^aprende (.+) son (.+)$/i,
+        /^aprende (.+) como (.+)$/i,
+        /^ensena que (.+) es (.+)$/i,
+        /^ensena (.+) es (.+)$/i,
+        /^enseña que (.+) es (.+)$/i,
+        /^enseña (.+) es (.+)$/i,
+        /^recuerda que (.+) es (.+)$/i,
+        /^recuerda (.+) es (.+)$/i,
+        /^guarda que (.+) es (.+)$/i,
+        /^guarda (.+) es (.+)$/i,
+        /^memoriza que (.+) es (.+)$/i
+      ];
+      
+      // Nuevos patrones (conversacionales)
+      const naturalPatterns = [
+        // Patrones conversacionales - grupo 2, 3
+        {
+          regex: /(?:quiero|necesito|me gustaría|quisiera) que (?:aprendas|sepas|recuerdes|guardes) que (.+) es (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        {
+          regex: /(?:debes|deberías|podrías|puedes) (?:aprender|saber|recordar|guardar) que (.+) es (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        // Definiciones - grupo 1, 2
+        {
+          regex: /(.+) significa (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        {
+          regex: /(.+) se define como (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        {
+          regex: /(.+) es igual a (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        {
+          regex: /(.+) se refiere a (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        {
+          regex: /la definición de (.+) es (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        // Correcciones - grupo 1, 2
+        {
+          regex: /^no,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        {
+          regex: /^incorrecto,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        {
+          regex: /^te equivocas,? (.+) (?:es|significa|equivale a|se refiere a) (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        },
+        // Formato simplificado - grupo 1, 2
+        {
+          regex: /^(.+): (.+)$/i,
+          questionIndex: 1,
+          answerIndex: 2
+        }
+      ];
+      
+      // Intentar patrones explícitos primero
+      for (const pattern of explicitPatterns) {
+        const match = query.match(pattern);
         if (match) {
-          question = match[questionIndex].trim();
-          answer = match[answerIndex].trim();
+          question = match[1].trim();
+          answer = match[2].trim();
           break;
         }
       }
-    }
-    
-    // Si no pudimos extraer pregunta y respuesta
-    if (!question || !answer) {
-      return {
-        response: "No estoy seguro de qué debo aprender. Puedes usar formatos como 'aprende que X es Y' o simplemente 'X significa Y'.",
-        source: "system",
-        confidence: 1.0
-      };
-    }
-    
-    // Normalizar la pregunta para mejorar búsquedas futuras
-    question = this.normalizeQuery(question);
-    
-    // Verificar si ya existe una pregunta similar
-    const existingEntries = await KnowledgeModel.findAnswers(
-      question,
-      0.75, // Umbral más bajo para verificar duplicados
-      userId
-    );
-    
-    let knowledgeId;
-    
-    if (existingEntries.length > 0 && existingEntries[0].similarity > 0.8) {
-      // Si ya existe una entrada muy similar, actualizarla
-      const existingEntry = existingEntries[0];
-      logger.info(`Actualizando conocimiento existente (${existingEntry.id}) con nueva respuesta`);
       
-      try {
-        await KnowledgeModel.updateKnowledge(existingEntry.id, {
-          response: answer,
-          confidence: Math.max(existingEntry.confidence, 0.95), // Incrementar confianza 
-          source: 'user_explicit' // Marcar como explícitamente añadido por el usuario
-        });
-        
-        knowledgeId = existingEntry.id;
-      } catch (error) {
-        logger.error('Error al actualizar conocimiento existente:', error);
+      // Si no hay coincidencia, intentar los patrones naturales
+      if (!question || !answer) {
+        for (const { regex, questionIndex, answerIndex } of naturalPatterns) {
+          const match = query.match(regex);
+          if (match) {
+            question = match[questionIndex].trim();
+            answer = match[answerIndex].trim();
+            break;
+          }
+        }
+      }
+      
+      // Si no pudimos extraer pregunta y respuesta
+      if (!question || !answer) {
         return {
-          response: "Lo siento, hubo un problema al actualizar el conocimiento. Por favor, intenta nuevamente.",
-          source: "error",
-          confidence: 0
+          response: "No estoy seguro de qué debo aprender. Puedes usar formatos como 'aprende que X es Y' o simplemente 'X significa Y'.",
+          source: "system",
+          confidence: 1.0
         };
       }
       
-      // Corregir cualquier problema de codificación
-      const fixedQuestion = this.fixEncoding(existingEntry.query);
-      const fixedAnswer = this.fixEncoding(answer);
+      // Normalizar la pregunta para mejorar búsquedas futuras
+      question = this.normalizeQuery(question);
       
-      const confirmationResponse = `He actualizado mi conocimiento. Ahora sé que "${fixedQuestion}" es "${fixedAnswer}".`;
+      // Verificar si ya existe una pregunta similar
+      const existingEntries = await KnowledgeModel.findAnswers(
+        question,
+        0.75, // Umbral más bajo para verificar duplicados
+        userId
+      );
       
-      // Registrar en el historial
-      await this.logConversation({
-        userId,
-        query,
-        response: confirmationResponse,
-        knowledgeId,
-        confidence: 1.0
-      });
+      let knowledgeId;
       
-      return {
-        response: confirmationResponse,
-        source: "learning",
-        confidence: 1.0,
-        knowledgeId
-      };
-      
-    } else {
-      // Añadir el nuevo conocimiento
-      try {
-        const newKnowledge = await KnowledgeModel.addKnowledge({
-          query: question,
-          response: answer,
-          context: null,
-          source: 'user',
-          confidence: 0.95, // Alta confianza para conocimientos explícitos del usuario
+      if (existingEntries.length > 0 && existingEntries[0].similarity > 0.8) {
+        // Si ya existe una entrada muy similar, actualizarla
+        const existingEntry = existingEntries[0];
+        logger.info(`Actualizando conocimiento existente (${existingEntry.id}) con nueva respuesta`);
+        
+        try {
+          await KnowledgeModel.updateKnowledge(existingEntry.id, {
+            response: answer,
+            confidence: Math.max(existingEntry.confidence, 0.95), // Incrementar confianza 
+            source: 'user_explicit' // Marcar como explícitamente añadido por el usuario
+          });
+          
+          knowledgeId = existingEntry.id;
+        } catch (error) {
+          logger.error('Error al actualizar conocimiento existente:', error);
+          return {
+            response: "Lo siento, hubo un problema al actualizar el conocimiento. Por favor, intenta nuevamente.",
+            source: "error",
+            confidence: 0
+          };
+        }
+        
+        // Corregir cualquier problema de codificación
+        const fixedQuestion = this.fixEncoding(existingEntry.query);
+        const fixedAnswer = this.fixEncoding(answer);
+        
+        const confirmationResponse = `He actualizado mi conocimiento. Ahora sé que "${fixedQuestion}" es "${fixedAnswer}".`;
+        
+        // Registrar en el historial
+        await this.logConversation({
           userId,
-          isPublic: userId ? false : true // Solo públicos si no hay usuario
+          query,
+          response: confirmationResponse,
+          knowledgeId,
+          confidence: 1.0
         });
         
-        knowledgeId = newKnowledge.id;
-      } catch (error) {
-        logger.error('Error al añadir conocimiento en comando de aprendizaje:', error);
         return {
-          response: "Lo siento, hubo un problema al guardar el conocimiento. Por favor, intenta nuevamente.",
-          source: "error",
-          confidence: 0
+          response: confirmationResponse,
+          source: "learning",
+          confidence: 1.0,
+          knowledgeId
+        };
+        
+      } else {
+        // Añadir el nuevo conocimiento
+        try {
+          const newKnowledge = await KnowledgeModel.addKnowledge({
+            query: question,
+            response: answer,
+            context: null,
+            source: 'user',
+            confidence: 0.95, // Alta confianza para conocimientos explícitos del usuario
+            userId,
+            isPublic: userId ? false : true // Solo públicos si no hay usuario
+          });
+          
+          knowledgeId = newKnowledge.id;
+        } catch (error) {
+          logger.error('Error al añadir conocimiento en comando de aprendizaje:', error);
+          return {
+            response: "Lo siento, hubo un problema al guardar el conocimiento. Por favor, intenta nuevamente.",
+            source: "error",
+            confidence: 0
+          };
+        }
+        
+        // Corregir cualquier problema de codificación
+        const fixedQuestion = this.fixEncoding(question);
+        const fixedAnswer = this.fixEncoding(answer);
+        
+        const confirmationResponse = `¡Gracias! He aprendido que "${fixedQuestion}" es "${fixedAnswer}".`;
+        
+        // Registrar en el historial
+        await this.logConversation({
+          userId,
+          query,
+          response: confirmationResponse,
+          knowledgeId,
+          confidence: 1.0
+        });
+        
+        return {
+          response: confirmationResponse,
+          source: "learning",
+          confidence: 1.0,
+          knowledgeId
         };
       }
-      
-      // Corregir cualquier problema de codificación
-      const fixedQuestion = this.fixEncoding(question);
-      const fixedAnswer = this.fixEncoding(answer);
-      
-      const confirmationResponse = `¡Gracias! He aprendido que "${fixedQuestion}" es "${fixedAnswer}".`;
-      
-      // Registrar en el historial
-      await this.logConversation({
-        userId,
-        query,
-        response: confirmationResponse,
-        knowledgeId,
-        confidence: 1.0
-      });
-      
+    } catch (error) {
+      logger.error('Error al procesar comando de aprendizaje:', error);
       return {
-        response: confirmationResponse,
-        source: "learning",
-        confidence: 1.0,
-        knowledgeId
+        response: "Lo siento, ocurrió un error al intentar aprender. Por favor, intenta de nuevo.",
+        source: "error",
+        confidence: 0
       };
     }
-  } catch (error) {
-    logger.error('Error al procesar comando de aprendizaje:', error);
-    return {
-      response: "Lo siento, ocurrió un error al intentar aprender. Por favor, intenta de nuevo.",
-      source: "error",
-      confidence: 0
-    };
-  }
-},
+  },
 
-  
   /**
    * Corrige problemas de codificación en el texto
    * @param {string} text - Texto a corregir
@@ -1244,111 +1303,6 @@ async handleLearningCommand(query, userId) {
       .replace(/�/g, 'í') // Reemplazar � con la letra más probable
       .replace(/par�s/gi, 'París')
       .replace(/m�xico/gi, 'México');
-  },
-  
-  /**
-   * Función para verificar si una respuesta web es relevante para la consulta
-   * @param {string} query - Consulta original
-   * @param {string} response - Respuesta a evaluar
-   * @returns {boolean} - true si la respuesta es relevante
-   */
-  isWebResponseRelevant(query, response) {
-    try {
-      if (!query || !response) return false;
-      
-      // Palabras comunes que no aportan valor semántico (stop words)
-      const stopwords = [
-        'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 
-        'de', 'del', 'a', 'al', 'y', 'o', 'que', 'en', 'con', 
-        'por', 'para', 'como', 'se', 'su', 'sus', 'mi', 'mis', 
-        'tu', 'tus', 'es', 'son', 'fue', 'fueron', 'ser', 'estar',
-        'hay', 'este', 'esta', 'estos', 'estas', 'ese', 'esa',
-        'esos', 'esas', 'aquel', 'aquella', 'desde', 'hasta',
-        'cada', 'sobre', 'entre', 'hacia', 'sin', 'contra', 'durante',
-        'muy', 'más', 'menos'
-      ];
-      
-      // Normalizar la consulta
-      const normalizedQuery = query.toLowerCase()
-        .replace(/[.,;:!?¿¡]/g, '') // Eliminar puntuación
-        .replace(/\s+/g, ' ')       // Normalizar espacios
-        .trim();
-      
-      // Normalizar la respuesta
-      const normalizedResponse = response.toLowerCase();
-      
-      // Extraer palabras clave (no stopwords, longitud > 2)
-      const queryWords = normalizedQuery
-        .split(/\s+/)
-        .filter(word => word.length > 2 && !stopwords.includes(word));
-      
-      if (queryWords.length === 0) {
-        logger.warn(`No se encontraron palabras clave significativas en la consulta: "${query}"`);
-        return false; // No podemos evaluar sin palabras clave
-      }
-      
-      // Evaluación a nivel de palabras clave
-      const keywordMatches = queryWords.filter(word => 
-        normalizedResponse.includes(word)
-      );
-      
-      const keywordMatchRatio = keywordMatches.length / queryWords.length;
-      
-      // Evaluación a nivel de frases (buscar secuencias de palabras)
-      let phraseMatch = false;
-      if (queryWords.length >= 2) {
-        // Buscar coincidencias de pares de palabras en secuencia
-        for (let i = 0; i < queryWords.length - 1; i++) {
-          const phrase = `${queryWords[i]} ${queryWords[i+1]}`;
-          if (normalizedResponse.includes(phrase)) {
-            phraseMatch = true;
-            break;
-          }
-        }
-      }
-      
-      // Análisis de longitud de la respuesta
-      const isTooShort = normalizedResponse.length < 20;
-      const isTooGeneric = normalizedResponse.length < 60 && 
-                           !normalizedResponse.includes(queryWords[0]) &&
-                           keywordMatchRatio < 0.4;
-      
-      // Evaluación del tipo de consulta
-      const isFactual = knowledgeResponseService.isFactualQuestion(query);
-      
-      // Reglas para determinar relevancia
-      let isRelevant = false;
-      
-      if (isFactual) {
-        // Preguntas factuales necesitan alta coincidencia o frase
-        isRelevant = keywordMatchRatio >= 0.6 || (keywordMatchRatio >= 0.4 && phraseMatch);
-      } else {
-        // Otras consultas pueden ser más flexibles
-        isRelevant = (keywordMatchRatio >= 0.4) || 
-                     (keywordMatchRatio >= 0.3 && phraseMatch) ||
-                     (keywordMatches.length >= 3);
-      }
-      
-      // Reglas adicionales
-      if (isTooShort || isTooGeneric) {
-        isRelevant = false; // Descartar respuestas demasiado cortas o genéricas
-      }
-      
-      // Log para diagnóstico
-      logger.info(`Evaluación de relevancia para consulta "${query}": 
-        - Coincidencia de palabras clave: ${keywordMatchRatio.toFixed(2)} (${keywordMatches.length}/${queryWords.length})
-        - Coincidencia de frases: ${phraseMatch ? 'SÍ' : 'NO'}
-        - Respuesta demasiado corta: ${isTooShort ? 'SÍ' : 'NO'}
-        - Respuesta genérica: ${isTooGeneric ? 'SÍ' : 'NO'}
-        - Resultado: ${isRelevant ? 'RELEVANTE' : 'NO RELEVANTE'}`);
-      
-      return isRelevant;
-      
-    } catch (error) {
-      logger.error('Error al evaluar relevancia de respuesta:', error);
-      // En caso de error, asumir que la respuesta no es relevante por seguridad
-      return false;
-    }
   },
   
   /**
