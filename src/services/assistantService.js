@@ -153,26 +153,32 @@ const AssistantService = {
       }
 
       // Verificar si es una respuesta a una pregunta anterior sobre buscar en la web
-      if (options.awaitingWebSearchConfirmation && 
-          (normalizedQuery.match(/^s[ií]/i) || normalizedQuery.match(/^yes/i) || 
-           normalizedQuery.includes('busca') || normalizedQuery.includes('web'))) {
-        
-        logger.info(`Usuario confirmó búsqueda web para: "${options.originalQuery}"`);
-        
-        // Ejecutar búsqueda web + IA
-        return await this.executeWebAndAISearch(options.originalQuery, userId);
-      }
-      
-      // Verificar si es una respuesta negativa a buscar en la web
-      if (options.awaitingWebSearchConfirmation && 
-          (normalizedQuery.match(/^no/i) || normalizedQuery.includes('no busques'))) {
-        
-        return {
-          response: "De acuerdo, no buscaré en fuentes externas. Si deseas enseñarme sobre este tema, puedes usar el comando 'aprende que [pregunta] es [respuesta]'.",
-          source: "system",
-          confidence: 1.0
-        };
-      }
+if (options.awaitingWebSearchConfirmation) {
+  logger.info(`Procesando confirmación de búsqueda web para: "${options.originalQuery}"`);
+  
+  // NUEVO: Verificar la propiedad isConfirmed en las opciones
+  if (options.isConfirmed || 
+      normalizedQuery.match(/^s[ií]/i) || 
+      normalizedQuery.match(/^yes/i) || 
+      normalizedQuery === '1' ||
+      normalizedQuery.includes('busca') || 
+      normalizedQuery.includes('web')) {
+    
+    const queryToSearch = options.originalQuery || query;
+    logger.info(`Usuario confirmó búsqueda web para: "${queryToSearch}"`);
+    
+    // Ejecutar búsqueda web + IA
+    return await this.executeWebAndAISearch(queryToSearch, userId);
+  } else {
+    logger.info(`Usuario rechazó búsqueda web para: "${options.originalQuery}"`);
+    
+    return {
+      response: "De acuerdo, no buscaré en fuentes externas. Si deseas enseñarme sobre este tema, puedes usar el comando 'aprende que [pregunta] es [respuesta]'.",
+      source: "system",
+      confidence: 1.0
+    };
+  }
+  }
       
       // Verificar si es una respuesta a una pregunta anterior sobre actualizar información
       if (options.awaitingUpdateConfirmation && 
