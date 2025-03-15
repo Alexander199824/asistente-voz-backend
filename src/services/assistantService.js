@@ -152,17 +152,36 @@ const AssistantService = {
         };
       }
 
-    // Verificar si es una respuesta a una pregunta anterior sobre buscar en la web
+// Verificar si es una respuesta a una pregunta anterior sobre buscar en la web
 if (options.awaitingWebSearchConfirmation) {
   logger.info(`Procesando confirmación de búsqueda web para: "${options.originalQuery}"`);
+  logger.info(`Valor de isConfirmed: ${options.isConfirmed}, tipo: ${typeof options.isConfirmed}`);
   
-  // SOLUCIÓN: Verificar correctamente la propiedad isConfirmed
-  if (options.isConfirmed === true) {
+  // Hacer más robusta la verificación de confirmación
+  if (options.isConfirmed === true || 
+      options.isConfirmed === 'true' || 
+      options.isConfirmed === 1 ||
+      options.isConfirmed === '1') {
+    
     logger.info(`Usuario confirmó búsqueda web para: "${options.originalQuery}"`);
     
     // Ejecutar búsqueda web + IA
     return await this.executeWebAndAISearch(options.originalQuery, userId);
-  } else {
+  } 
+  // También verificar si la respuesta del usuario contiene palabras de confirmación
+  else if (typeof normalizedQuery === 'string' && 
+          (normalizedQuery.match(/^s[ií]/i) || 
+           normalizedQuery.match(/^yes/i) ||
+           normalizedQuery.includes('busca') || 
+           normalizedQuery.includes('buscar') ||
+           normalizedQuery.includes('claro') ||
+           normalizedQuery.includes('adelante') ||
+           normalizedQuery.includes('por favor'))) {
+    
+    logger.info(`Usuario confirmó búsqueda web a través de texto: "${normalizedQuery}"`);
+    return await this.executeWebAndAISearch(options.originalQuery, userId);
+  } 
+  else {
     logger.info(`Usuario rechazó búsqueda web para: "${options.originalQuery}"`);
     
     return {
