@@ -152,23 +152,16 @@ const AssistantService = {
         };
       }
 
-      // Verificar si es una respuesta a una pregunta anterior sobre buscar en la web
+    // Verificar si es una respuesta a una pregunta anterior sobre buscar en la web
 if (options.awaitingWebSearchConfirmation) {
   logger.info(`Procesando confirmación de búsqueda web para: "${options.originalQuery}"`);
   
-  // NUEVO: Verificar la propiedad isConfirmed en las opciones
-  if (options.isConfirmed || 
-      normalizedQuery.match(/^s[ií]/i) || 
-      normalizedQuery.match(/^yes/i) || 
-      normalizedQuery === '1' ||
-      normalizedQuery.includes('busca') || 
-      normalizedQuery.includes('web')) {
-    
-    const queryToSearch = options.originalQuery || query;
-    logger.info(`Usuario confirmó búsqueda web para: "${queryToSearch}"`);
+  // SOLUCIÓN: Verificar correctamente la propiedad isConfirmed
+  if (options.isConfirmed === true) {
+    logger.info(`Usuario confirmó búsqueda web para: "${options.originalQuery}"`);
     
     // Ejecutar búsqueda web + IA
-    return await this.executeWebAndAISearch(queryToSearch, userId);
+    return await this.executeWebAndAISearch(options.originalQuery, userId);
   } else {
     logger.info(`Usuario rechazó búsqueda web para: "${options.originalQuery}"`);
     
@@ -178,7 +171,7 @@ if (options.awaitingWebSearchConfirmation) {
       confidence: 1.0
     };
   }
-  }
+}
       
       // Verificar si es una respuesta a una pregunta anterior sobre actualizar información
       if (options.awaitingUpdateConfirmation && 
