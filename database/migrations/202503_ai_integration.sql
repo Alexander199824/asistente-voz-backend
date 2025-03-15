@@ -88,5 +88,4 @@ ALTER TABLE knowledge_base
   ADD COLUMN IF NOT EXISTS is_ai_generated BOOLEAN DEFAULT false;
 
 -- Comentario final de migración
-COMMENT ON MIGRATION 20240315_database_migration IS 
-  'Añade soporte para generación de conocimiento por IA, seguimiento de actualizaciones y rol de usuario';
+--COMMENT ON DATABASE current_database() IS 'Base de datos con soporte para generación de conocimiento por IA, seguimiento de actualizaciones y rol de usuario';

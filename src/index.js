@@ -14,7 +14,8 @@ async function runMigrations() {
     logger.info('Iniciando proceso de migraciones...');
     
     // Ruta a los archivos de migración
-    const migrationPath = path.join(__dirname, 'migrations');
+    const migrationPath = path.join(__dirname, '../database/migrations');
+    
     
     // Leer archivos de migración
     const migrationFiles = fs.readdirSync(migrationPath)
