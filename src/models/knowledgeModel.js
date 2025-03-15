@@ -1,7 +1,7 @@
 const db = require('../config/database');
 const { logger } = require('../config');
+const { v4: uuidv4 } = require('uuid');
 
-// Modelo para la base de conocimientos
 const KnowledgeModel = {
   /**
    * Busca respuestas basadas en una consulta (versión mejorada)
@@ -142,7 +142,17 @@ const KnowledgeModel = {
    * @param {Object} knowledge - Objeto con la información del conocimiento
    * @returns {Promise<Object>} - Conocimiento añadido
    */
-  async addKnowledge({ query, response, context = null, source = 'user', confidence = 1.0, userId = null, isPublic = false, is_ai_generated = false }) {
+  async addKnowledge({ 
+    query, 
+    response, 
+    context = null, 
+    source = 'user', 
+    confidence = 1.0, 
+    userId = null, 
+    isPublic = false, 
+    isAIGenerated = false,
+    aiProvider = null
+  }) {
     try {
       // Normalizamos la consulta
       const normalizedQuery = query.toLowerCase().trim();
@@ -166,9 +176,10 @@ const KnowledgeModel = {
             context = $2,
             confidence = $3,
             is_ai_generated = $4,
+            ai_provider = $5,
             last_verified_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
-          WHERE id = $5
+          WHERE id = $6
           RETURNING *;
         `;
         
@@ -176,7 +187,8 @@ const KnowledgeModel = {
           response, 
           context,
           Math.max(confidence, existingEntry.rows[0].confidence),
-          is_ai_generated,
+          isAIGenerated,
+          aiProvider,
           existingEntry.rows[0].id
         ]);
         
@@ -187,6 +199,7 @@ const KnowledgeModel = {
       // Si no existe, insertamos nuevo conocimiento
       const insertQuery = `
         INSERT INTO knowledge_base (
+          id,
           query, 
           response, 
           context, 
@@ -195,13 +208,15 @@ const KnowledgeModel = {
           user_id, 
           is_public,
           is_ai_generated,
+          ai_provider,
           last_verified_at
         ) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
         RETURNING *;
       `;
       
       const result = await db.query(insertQuery, [
+        uuidv4(),
         normalizedQuery,
         response,
         context,
@@ -209,7 +224,8 @@ const KnowledgeModel = {
         confidence,
         userId,
         isPublic,
-        is_ai_generated
+        isAIGenerated,
+        aiProvider
       ]);
       
       logger.info(`Nuevo conocimiento añadido: "${normalizedQuery}"`);
@@ -323,7 +339,7 @@ const KnowledgeModel = {
    * @param {Object} updates - Campos a actualizar
    * @returns {Promise<Object>} - Conocimiento actualizado
    */
-  async updateKnowledge(id, { response, context, source, confidence, is_ai_generated, updated_at }) {
+  async updateKnowledge(id, { response, context, source, confidence, is_ai_generated, ai_provider, updated_at }) {
     try {
       let updateFields = [];
       let queryParams = [];
@@ -358,6 +374,12 @@ const KnowledgeModel = {
       if (is_ai_generated !== undefined) {
         updateFields.push(`is_ai_generated = $${paramCounter}`);
         queryParams.push(is_ai_generated);
+        paramCounter++;
+      }
+      
+      if (ai_provider !== undefined) {
+        updateFields.push(`ai_provider = $${paramCounter}`);
+        queryParams.push(ai_provider);
         paramCounter++;
       }
       

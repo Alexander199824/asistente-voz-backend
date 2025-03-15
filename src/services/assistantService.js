@@ -536,7 +536,7 @@ const AssistantService = {
       // NUEVO: Preguntar al usuario si desea buscar en la web o proporcionar la información
 logger.info('No se encontró información en BD. Preguntando al usuario sobre cómo proceder.');
 
-const messageResponse = "No tengo información sobre esto en mi base de conocimientos. Puedes elegir entre: \n\n1. Que busque en otras fuentes como internet o inteligencia artificial \n2. Proporcionarme tú la información usando 'aprende que [pregunta] es [respuesta]'";
+const messageResponse = "No tengo información sobre esto en mi base de conocimientos. Puedes elegir entre: \n\n1. Que busque en otras fuente como internet \n2. Proporcionarme tú la información usando 'aprende que [pregunta] es [respuesta]'";
 
 // Registrar en el historial
 await this.logConversation({

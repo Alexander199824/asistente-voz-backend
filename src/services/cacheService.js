@@ -1,117 +1,14 @@
-/**
- * Servicio de caché para respuestas de IA
- * Reduce el número de llamadas a las APIs externas
- */
 const { logger } = require('../config');
 const db = require('../config/database');
 
 const CacheService = {
   /**
-   * Busca una respuesta en caché para una consulta específica
-   * @param {string} query - La consulta normalizada
-   * @returns {Promise<Object|null>} - Respuesta en caché o null si no existe
-   */
-  async getFromCache(query) {
-    try {
-      // Generar un hash simple para la consulta para facilitar búsquedas
-      const queryHash = this.generateQueryHash(query);
-      
-      // Buscar en la tabla de caché
-      const result = await db.query(`
-        SELECT query, response, source, created_at
-        FROM ia_cache
-        WHERE query_hash = $1 OR query = $2
-        ORDER BY created_at DESC
-        LIMIT 1
-      `, [queryHash, query]);
-      
-      if (result.rows.length > 0) {
-        const cachedItem = result.rows[0];
-        
-        // Verificar si la caché está "fresca" (menos de 7 días)
-        const cacheAge = Date.now() - new Date(cachedItem.created_at).getTime();
-        const maxCacheAge = 7 * 24 * 60 * 60 * 1000; // 7 días en milisegundos
-        
-        if (cacheAge < maxCacheAge) {
-          logger.info(`Respuesta encontrada en caché para: "${query}", edad: ${Math.round(cacheAge / (1000 * 60 * 60))} horas`);
-          
-          return {
-            answer: cachedItem.response,
-            source: cachedItem.source || 'caché',
-            context: 'Respuesta en caché',
-            confidence: 0.9,
-            fromCache: true
-          };
-        } else {
-          logger.info(`Caché obsoleta para: "${query}", edad: ${Math.round(cacheAge / (1000 * 60 * 60 * 24))} días`);
-          return null;
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      logger.error('Error al buscar en caché:', error);
-      return null;
-    }
-  },
-
-  /**
-   * Guarda una respuesta en la caché
-   * @param {string} query - La consulta normalizada
-   * @param {string} response - La respuesta de la IA
-   * @param {string} source - Fuente de la respuesta (OpenAI, etc.)
-   * @returns {Promise<boolean>} - true si se guardó correctamente
-   */
-  async saveToCache(query, response, source) {
-    try {
-      const queryHash = this.generateQueryHash(query);
-      
-      // Insertar en la tabla de caché, o actualizar si ya existe
-      await db.query(`
-        INSERT INTO ia_cache (query, query_hash, response, source, created_at)
-        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-        ON CONFLICT (query_hash) 
-        DO UPDATE SET 
-          response = $3,
-          source = $4,
-          created_at = CURRENT_TIMESTAMP
-      `, [query, queryHash, response, source]);
-      
-      logger.info(`Respuesta guardada en caché para: "${query}"`);
-      return true;
-    } catch (error) {
-      logger.error('Error al guardar en caché:', error);
-      return false;
-    }
-  },
-
-  /**
-   * Genera un hash simple para una consulta
-   * @param {string} query - La consulta a hashear
-   * @returns {string} - Hash de la consulta
-   */
-  generateQueryHash(query) {
-    // Simplificar la consulta: eliminar espacios, convertir a minúsculas
-    const simplifiedQuery = query.toLowerCase().replace(/\s+/g, ' ').trim();
-    
-    // Crear un hash simple
-    let hash = 0;
-    for (let i = 0; i < simplifiedQuery.length; i++) {
-      const char = simplifiedQuery.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash |= 0; // Convertir a entero de 32 bits
-    }
-    
-    // Convertir a string positivo
-    return Math.abs(hash).toString();
-  },
-
-  /**
-   * Inicializa la tabla de caché en la base de datos
+   * Inicializar tabla de caché
+   * @returns {Promise<boolean>}
    */
   async initCacheTable() {
     try {
-      // Crear la tabla ia_cache si no existe
+      // Crear tabla de caché de IA si no existe
       await db.query(`
         CREATE TABLE IF NOT EXISTS ia_cache (
           id SERIAL PRIMARY KEY,
@@ -124,23 +21,112 @@ const CacheService = {
         )
       `);
       
-      // Crear índice para búsquedas más rápidas
+      // Crear índice para búsquedas rápidas
       await db.query(`
         CREATE INDEX IF NOT EXISTS query_hash_idx ON ia_cache(query_hash)
       `);
       
-      logger.info('Tabla de caché inicializada correctamente');
+      logger.info('Tabla de caché de IA inicializada correctamente');
       return true;
     } catch (error) {
-      logger.error('Error al inicializar tabla de caché:', error);
+      logger.error('Error al inicializar tabla de caché de IA:', error);
       return false;
     }
   },
 
   /**
-   * Limpia entradas antiguas de la caché
-   * @param {number} days - Edad máxima en días
-   * @returns {Promise<number>} - Número de registros eliminados
+   * Buscar en caché
+   * @param {string} query - Consulta a buscar
+   * @returns {Promise<Object|null>}
+   */
+  async getFromCache(query) {
+    try {
+      // Generar hash de consulta
+      const queryHash = this.generateQueryHash(query);
+      
+      // Buscar en caché
+      const result = await db.query(`
+        SELECT query, response, source, created_at
+        FROM ia_cache
+        WHERE query_hash = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [queryHash]);
+      
+      if (result.rows.length > 0) {
+        const cachedItem = result.rows[0];
+        
+        // Verificar antigüedad de caché (7 días)
+        const cacheAge = Date.now() - new Date(cachedItem.created_at).getTime();
+        const maxCacheAge = 7 * 24 * 60 * 60 * 1000; // 7 días en milisegundos
+        
+        if (cacheAge < maxCacheAge) {
+          logger.info(`Respuesta encontrada en caché para: "${query}"`);
+          return {
+            answer: cachedItem.response,
+            source: cachedItem.source || 'caché',
+            fromCache: true
+          };
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error('Error al buscar en caché:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Guardar en caché
+   * @param {string} query - Consulta
+   * @param {string} response - Respuesta
+   * @param {string} source - Fuente de la respuesta
+   * @returns {Promise<boolean>}
+   */
+  async saveToCache(query, response, source) {
+    try {
+      const queryHash = this.generateQueryHash(query);
+      
+      await db.query(`
+        INSERT INTO ia_cache (query, query_hash, response, source, created_at)
+        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+        ON CONFLICT (query_hash) DO UPDATE SET 
+          response = $3,
+          source = $4,
+          created_at = CURRENT_TIMESTAMP
+      `, [query, queryHash, response, source]);
+      
+      logger.info(`Respuesta guardada en caché: "${query.substring(0, 50)}..."`);
+      return true;
+    } catch (error) {
+      logger.error('Error al guardar en caché:', error);
+      return false;
+    }
+  },
+
+  /**
+   * Generar hash de consulta
+   * @param {string} query - Consulta a hashear
+   * @returns {string} - Hash de consulta
+   */
+  generateQueryHash(query) {
+    const simplifiedQuery = query.toLowerCase().replace(/\s+/g, ' ').trim();
+    
+    let hash = 0;
+    for (let i = 0; i < simplifiedQuery.length; i++) {
+      const char = simplifiedQuery.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0; // Convertir a entero de 32 bits
+    }
+    
+    return Math.abs(hash).toString();
+  },
+
+  /**
+   * Limpiar caché antigua
+   * @param {number} days - Días máximos de antigüedad
+   * @returns {Promise<number>} - Registros eliminados
    */
   async cleanOldCache(days = 30) {
     try {

@@ -1,13 +1,85 @@
-// src/index.js
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const { logger, config } = require('./config');
 const routes = require('./routes');
-const KnowledgeModel = require('./models/knowledgeModel');
 const db = require('./config/database');
-const CacheService = require('./services/cacheService');
+const fs = require('fs');
+const path = require('path');
+
+// Función para ejecutar migraciones
+async function runMigrations() {
+  try {
+    logger.info('Iniciando proceso de migraciones...');
+    
+    // Ruta a los archivos de migración
+    const migrationPath = path.join(__dirname, 'migrations');
+    
+    // Leer archivos de migración
+    const migrationFiles = fs.readdirSync(migrationPath)
+      .filter(file => file.endsWith('.sql'))
+      .sort(); // Ordenar para ejecutar migraciones en orden
+    
+    // Ejecutar cada migración
+    for (const file of migrationFiles) {
+      try {
+        const migrationSQL = fs.readFileSync(path.join(migrationPath, file), 'utf8');
+        
+        logger.info(`Ejecutando migración: ${file}`);
+        await db.query(migrationSQL);
+        
+        logger.info(`Migración ${file} completada con éxito`);
+      } catch (migrationError) {
+        logger.error(`Error en migración ${file}:`, migrationError);
+        // Continuar con las siguientes migraciones incluso si una falla
+      }
+    }
+    
+    logger.info('Proceso de migraciones completado');
+  } catch (error) {
+    logger.error('Error crítico durante las migraciones:', error);
+    // En producción, podrías querer detener la inicialización del servidor
+    throw error;
+  }
+}
+
+// Función principal de inicialización
+async function initializeSystem() {
+  try {
+    // Verificar conexión a la base de datos
+    const result = await db.query('SELECT NOW()');
+    logger.info(`Conexión a la base de datos establecida correctamente. Hora del servidor: ${result.rows[0].now}`);
+    
+    // Ejecutar migraciones
+    await runMigrations();
+    
+    // Inicializar otros servicios
+    await initializeAdditionalServices();
+    
+  } catch (error) {
+    logger.error('Error crítico durante la inicialización del sistema:', error);
+    process.exit(1);
+  }
+}
+
+// Función para inicializar servicios adicionales
+async function initializeAdditionalServices() {
+  try {
+    // Inicializar caché
+    const CacheService = require('./services/cacheService');
+    await CacheService.initCacheTable();
+    
+    // Limpiar caché antigua
+    await CacheService.cleanOldCache(30);
+    
+    // Cualquier otra inicialización de servicios
+    logger.info('Servicios adicionales inicializados correctamente');
+  } catch (error) {
+    logger.error('Error al inicializar servicios adicionales:', error);
+    // No detenemos la inicialización si hay un error en servicios adicionales
+  }
+}
 
 // Crear aplicación Express
 const app = express();
@@ -38,56 +110,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Limpiar la base de conocimientos al inicio (para pruebas)
-async function resetKnowledgeBaseOnStartup() {
-  try {
-    logger.info('Limpiando base de conocimientos para iniciar desde cero...');
-     //Verificamos primero la conexión a la base de datos
-    await db.query('SELECT NOW()');
-     //Luego ejecutamos la limpieza
-    const count = await KnowledgeModel.clearAllKnowledge();
-    logger.info(`Base de conocimientos limpiada. ${count} registros eliminados.`);
-  } catch (error) {
-    logger.error('Error al limpiar base de conocimientos:', error);
-  }
-}
+// Iniciar servidor
+const PORT = config.port || 3001;
 
-// Función para inicializar el sistema de caché
-async function initializeCache() {
-  try {
-    logger.info('Inicializando sistema de caché...');
-    
-    // Crear la tabla de caché si no existe
-    const initialized = await CacheService.initCacheTable();
-    
-    if (initialized) {
-      // Limpiar entradas antiguas de la caché (mayores a 30 días)
-      const cleaned = await CacheService.cleanOldCache(30);
-      logger.info(`Caché inicializada, ${cleaned} registros antiguos eliminados`);
-    } else {
-      logger.warn('No se pudo inicializar el sistema de caché');
-    }
-  } catch (error) {
-    logger.error('Error al inicializar sistema de caché:', error);
-  }
-}
-
-// Verificar la conexión a la base de datos antes de iniciar
-(async () => {
-  try {
-    const result = await db.query('SELECT NOW()');
-    logger.info(`Conexión a la base de datos establecida correctamente. Hora del servidor: ${result.rows[0].now}`);
-    
-    // Iniciar servidor
-    const PORT = config.port || 3001;
-    app.listen(PORT, async () => {
+// Inicializar sistema y luego iniciar servidor
+initializeSystem()
+  .then(() => {
+    app.listen(PORT, () => {
       logger.info(`Servidor iniciado en puerto ${PORT} (${config.nodeEnv})`);
-      
-      // Primero limpiar la base de conocimientos (opcional, comentar si no deseas esta funcionalidad)
-      await resetKnowledgeBaseOnStartup();
-      
-      // Inicializar el sistema de caché
-      await initializeCache();
       
       // Configuración de IA
       if (config.ai && config.ai.enabled) {
@@ -98,22 +128,16 @@ async function initializeCache() {
           model: config.ai.model,
           apiKey: config.ai.apiKey ? 'presente' : 'no configurada',
           priority: config.ai.priority,
-          fallbackProvider: config.ai.fallbackProvider || 'ninguno' // Nuevo campo
+          fallbackProvider: config.ai.fallbackProvider || 'ninguno'
         });
       } else {
         logger.info('Servicios de IA deshabilitados por configuración');
       }
     });
-  } catch (error) {
-    logger.error('Error al conectar con la base de datos:', error);
+  })
+  .catch(error => {
+    logger.error('Error crítico durante la inicialización:', error);
     process.exit(1);
-  }
-})();
-
-// Manejo de cierre
-process.on('SIGTERM', () => {
-  logger.info('Cerrando servidor...');
-  process.exit(0);
-});
+  });
 
 module.exports = app;
