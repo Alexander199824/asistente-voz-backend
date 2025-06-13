@@ -136,7 +136,7 @@ const AssistantService = {
 
 
 /**
- * MÉTODO COMPLETO CORREGIDO - Reemplazar en AssistantService en src/services/assistantService.js
+ * REEMPLAZAR MÉTODO processQuery EN src/services/assistantService.js
  * Procesa una consulta del usuario y devuelve una respuesta
  * @param {string} query - Consulta del usuario
  * @param {string} userId - ID del usuario (opcional)
@@ -160,29 +160,6 @@ async processQuery(query, userId = null, options = {}) {
       };
     }
 
-    // Verificar si es una respuesta a confirmación de aprendizaje
-    if (options.awaitingLearningConfirmation) {
-      logger.info(`Procesando confirmación de aprendizaje para: "${options.originalQuery}"`);
-      
-      if (options.isConfirmed === true || 
-          options.isConfirmed === 'true' || 
-          normalizedQuery.match(/^s[ií]/i) || 
-          normalizedQuery.match(/^yes/i) ||
-          normalizedQuery.includes('confirmo') ||
-          normalizedQuery.includes('si guarda') ||
-          normalizedQuery.includes('está bien')) {
-        
-        logger.info(`Usuario confirmó aprendizaje para: "${options.originalQuery}"`);
-        return await this.handleLearningCommand(options.originalQuery, userId);
-      } else {
-        logger.info(`Usuario canceló aprendizaje para: "${options.originalQuery}"`);
-        return {
-          response: "De acuerdo, no guardaré esa información.",
-          source: "system",
-          confidence: 1.0
-        };
-      }
-    }
 
     // Verificar si es una respuesta a una pregunta anterior sobre buscar en la web
     if (options.awaitingWebSearchConfirmation) {
@@ -228,36 +205,19 @@ async processQuery(query, userId = null, options = {}) {
       };
     }
 
-    // NUEVO: Detectar la intención del usuario
+    // DETECTAR LA INTENCIÓN DEL USUARIO
     const userIntent = this.detectUserIntent(normalizedQuery);
 
-    // Procesar según la intención detectada
+    // PROCESAR COMANDO DE APRENDIZAJE DIRECTAMENTE (SIN CONFIRMACIÓN)
     if (userIntent.name === 'learning' && userIntent.confidence >= 0.5) {
       logger.info(`Detectada intención de aprendizaje con alta confianza (${userIntent.confidence.toFixed(2)})`);
+      logger.info(`Procesando comando de aprendizaje directamente: "${normalizedQuery}"`);
       
-      // NUEVO: Pedir confirmación antes de guardar
-      const confirmationMessage = `¿Quieres que aprenda esto?
-
-"${normalizedQuery}"
-
-Responde 'sí' para confirmar o 'no' para cancelar.`;
-
-      await this.logConversation({
-        userId,
-        query: normalizedQuery,
-        response: confirmationMessage,
-        confidence: 0.9
-      });
-
-      return {
-        response: confirmationMessage,
-        source: "learning_confirmation",
-        confidence: 0.9,
-        awaitingLearningConfirmation: true,
-        originalQuery: normalizedQuery
-      };
+      // Procesar directamente el aprendizaje sin pedir confirmación
+      return await this.handleLearningCommand(normalizedQuery, userId);
     }
 
+    // Procesar saludos/despedidas
     if (userIntent.name === 'greeting' && userIntent.confidence >= 0.5) {
       logger.info(`Detectado saludo/despedida con alta confianza (${userIntent.confidence.toFixed(2)})`);
       const greetingResponse = greetingService.getGreetingResponse(normalizedQuery);
@@ -272,31 +232,14 @@ Responde 'sí' para confirmar o 'no' para cancelar.`;
       return greetingResponse;
     }
 
+    // Procesar correcciones directamente
     if (userIntent.name === 'correction' && userIntent.confidence >= 0.6) {
       logger.info(`Detectada corrección con alta confianza (${userIntent.confidence.toFixed(2)})`);
       const correctionText = normalizedQuery.replace(/^(no|incorrecto|falso|te equivocas)[,.]?\s+/i, '');
       
-      // NUEVO: Pedir confirmación para correcciones también
-      const confirmationMessage = `¿Quieres que corrija mi información?
-
-"${correctionText}"
-
-Responde 'sí' para confirmar o 'no' para cancelar.`;
-
-      await this.logConversation({
-        userId,
-        query: normalizedQuery,
-        response: confirmationMessage,
-        confidence: 0.9
-      });
-
-      return {
-        response: confirmationMessage,
-        source: "learning_confirmation",
-        confidence: 0.9,
-        awaitingLearningConfirmation: true,
-        originalQuery: correctionText
-      };
+      // Procesar directamente la corrección como aprendizaje
+      logger.info(`Procesando corrección como aprendizaje: "${correctionText}"`);
+      return await this.handleLearningCommand(correctionText, userId);
     }
     
     // BLOQUEO PRIORITARIO: Detección y manejo de consultas sobre el creador
@@ -333,27 +276,8 @@ Responde 'sí' para confirmar o 'no' para cancelar.`;
     if (this.isLearningCommand(normalizedQuery)) {
       logger.info(`Detectado comando de aprendizaje directo: "${normalizedQuery}"`);
       
-      // NUEVO: Pedir confirmación antes de guardar
-      const confirmationMessage = `¿Confirmas que quieres que aprenda esto?
-
-"${normalizedQuery}"
-
-Responde 'sí' para guardar o 'no' para cancelar.`;
-
-      await this.logConversation({
-        userId,
-        query: normalizedQuery,
-        response: confirmationMessage,
-        confidence: 0.9
-      });
-
-      return {
-        response: confirmationMessage,
-        source: "learning_confirmation", 
-        confidence: 0.9,
-        awaitingLearningConfirmation: true,
-        originalQuery: normalizedQuery
-      };
+      // Procesar directamente el aprendizaje sin pedir confirmación
+      return await this.handleLearningCommand(normalizedQuery, userId);
     }
     
     // 3. Detectar y manejar saludos
@@ -640,8 +564,7 @@ Opciones:
       confidence: 0
     };
   }
-},
-
+}, 
 // TAMBIÉN AGREGAR ESTE MÉTODO a AssistantService para evitar más errores
 
 /**
@@ -720,8 +643,8 @@ detectPotentialLearning(query) {
 },
 
 /**
- * MEJORAR MÉTODO isQuestion() en AssistantService
- * Detecta si es una pregunta para evitar confusión con aprendizaje
+ * REEMPLAZAR MÉTODO isQuestion EN src/services/assistantService.js
+ * Detecta si es una pregunta para evitar confusión con aprendizaje - MEJORADO
  * @param {string} query - Consulta normalizada
  * @returns {boolean} - true si es una pregunta
  */
@@ -778,7 +701,6 @@ isQuestion(query) {
   
   return isQuestion;
 },
-
 
   /**
    * Ejecuta una búsqueda web y de IA para actualizar el conocimiento
@@ -1106,8 +1028,8 @@ normalizeQuery(query) {
 },
 
 /**
- * REEMPLAZAR MÉTODO EXISTENTE en AssistantService en src/services/assistantService.js
- * Verifica si una consulta es un comando de aprendizaje (VERSIÓN MEJORADA)
+ * REEMPLAZAR MÉTODO isLearningCommand EN src/services/assistantService.js
+ * Verifica si una consulta es un comando de aprendizaje - MEJORADO para evitar confusión con preguntas
  * @param {string} query - Consulta normalizada
  * @returns {boolean} - true si es un comando de aprendizaje
  */
@@ -1120,130 +1042,111 @@ isLearningCommand(query) {
   
   // SEGUNDO: Si es una pregunta clara, NO es aprendizaje
   if (this.isQuestion(lowerQuery)) {
+    logger.info(`❌ Consulta "${lowerQuery}" es una PREGUNTA, no comando de aprendizaje`);
     return false;
   }
   
-  // TERCERO: Patrones súper fáciles (NUEVOS - agregados a los existentes)
-  const easyLearningPatterns = [
-    // Declaraciones directas simples
-    /^([^¿?]+) es ([^¿?]+)$/i,                    // "París es la capital de Francia"
-    /^([^¿?]+) son ([^¿?]+)$/i,                   // "Los gatos son animales"
-    /^([^¿?]+) significa ([^¿?]+)$/i,             // "Hola significa saludo"
-    /^([^¿?]+) se llama ([^¿?]+)$/i,              // "Mi perro se llama Max"
-    /^([^¿?]+) tiene (.+ habitantes|.+ millones|.+ población)$/i, // "España tiene 47 millones"
-    /^([^¿?]+) está en ([^¿?]+)$/i,               // "Madrid está en España"
-    /^([^¿?]+) fue ([^¿?]+)$/i,                   // "Shakespeare fue un escritor"
-    /^([^¿?]+) nació en ([^¿?]+)$/i,              // "Einstein nació en Alemania"
-    /^([^¿?]+) murió en ([^¿?]+)$/i,              // "Mozart murió en 1791"
-    /^([^¿?]+) vive en ([^¿?]+)$/i,               // "Mi hermana vive en Barcelona"
-    /^([^¿?]+) trabaja en ([^¿?]+)$/i,            // "Juan trabaja en Google"
-    
-    // Correcciones súper simples
-    /^no[,.]?\s*([^¿?]+) es ([^¿?]+)$/i,          // "No, París es la capital"
-    /^incorrecto[,.]?\s*([^¿?]+) es ([^¿?]+)$/i,  // "Incorrecto, la capital es Madrid"
-    /^está mal[,.]?\s*([^¿?]+)$/i,                // "Está mal, la verdad es que..."
-    /^te equivocas[,.]?\s*([^¿?]+)$/i,            // "Te equivocas, en realidad es..."
-    /^error[,.]?\s*([^¿?]+)$/i,                   // "Error, la respuesta correcta es..."
-    /^mentira[,.]?\s*([^¿?]+)$/i,                 // "Mentira, la verdad es..."
-    /^falso[,.]?\s*([^¿?]+)$/i,                   // "Falso, en realidad es..."
-    
-    // Comandos con "recuerda", "anota", etc.
-    /^(recuerda|anota|guarda|apunta)[:]?\s*([^¿?]+)$/i,
-    
-    // Comandos de voz naturales
-    /^(dile|di) que ([^¿?]+)$/i,                  // "Dile que París es la capital"
-    /^te digo que ([^¿?]+)$/i,                    // "Te digo que mañana es mi cumpleaños"
-    /^quiero que sepas que ([^¿?]+)$/i,           // "Quiero que sepas que soy vegetariano"
-    /^debes saber que ([^¿?]+)$/i,                // "Debes saber que trabajo en Google"
-    /^tienes que recordar que ([^¿?]+)$/i,        // "Tienes que recordar que soy alérgico"
-    
-    // Patrones con confirmación
-    /^([^¿?]+), ¿(ok|vale|entendido|de acuerdo|cierto)\?$/i,
-    
-    // Información personal fácil
-    /^mi ([^¿?]+) es ([^¿?]+)$/i,                 // "Mi nombre es Juan"
-    /^mi ([^¿?]+) son ([^¿?]+)$/i,                // "Mis hobbies son leer y nadar"
-    /^soy ([^¿?]+)$/i,                            // "Soy ingeniero"
-    /^trabajo en ([^¿?]+)$/i,                     // "Trabajo en Microsoft"
-    /^estudio ([^¿?]+)$/i,                        // "Estudio medicina"
-    /^vivo en ([^¿?]+)$/i,                        // "Vivo en Madrid"
-    /^me llamo ([^¿?]+)$/i,                       // "Me llamo Ana"
-    /^tengo (.+ años)$/i,                         // "Tengo 25 años"
-    
-    // Definiciones simples
-    /^(.+) quiere decir (.+)$/i,                 // "Amor quiere decir cariño"
-    /^(.+) es lo mismo que (.+)$/i,              // "Auto es lo mismo que carro"
-    
-    // Relaciones familiares/personales
-    /^(.+) es mi (.+)$/i,                        // "Juan es mi hermano"
-    /^(.+) es el (.+) de (.+)$/i,                // "Pedro es el padre de Ana"
-    
-    // Fechas y eventos
-    /^(.+) es el (.+ de .+)$/i,                  // "Mi cumpleaños es el 15 de mayo"
-    /^(.+) será (.+)$/i,                         // "La reunión será mañana"
-    
-    // Ubicaciones y direcciones
-    /^(.+) queda en (.+)$/i,                     // "El banco queda en la esquina"
-    /^(.+) se encuentra en (.+)$/i,              // "La oficina se encuentra en el centro"
-  ];
-  
-  // Verificar patrones fáciles PRIMERO
-  for (const pattern of easyLearningPatterns) {
-    if (pattern.test(lowerQuery)) {
-      logger.info(`Patrón fácil de aprendizaje detectado para: "${lowerQuery}"`);
-      return true;
-    }
-  }
-  
-  // MANTENER todos los patrones originales (NO TOCAR - para compatibilidad)
-  const originalPatterns = [
+  // TERCERO: Patrones súper específicos de aprendizaje (ALTA PRIORIDAD)
+  const explicitLearningPatterns = [
+    // Comandos explícitos de aprendizaje
     /^aprende que (.+) es (.+)$/i,
     /^aprende que (.+) significa (.+)$/i,
     /^aprende que (.+) son (.+)$/i,
     /^aprende (.+) es (.+)$/i,
     /^aprende (.+) significa (.+)$/i,
     /^aprende (.+) son (.+)$/i,
-    /^aprende (.+) como (.+)$/i,
     /^ensena que (.+) es (.+)$/i,
-    /^ensena (.+) es (.+)$/i,
     /^enseña que (.+) es (.+)$/i,
     /^enseña (.+) es (.+)$/i,
     /^recuerda que (.+) es (.+)$/i,
     /^recuerda (.+) es (.+)$/i,
     /^guarda que (.+) es (.+)$/i,
     /^guarda (.+) es (.+)$/i,
-    /^memoriza que (.+) es (.+)$/i
+    /^memoriza que (.+) es (.+)$/i,
+    
+    // Correcciones específicas
+    /^no[,.]?\s*(.+) es (.+)$/i,
+    /^incorrecto[,.]?\s*(.+) es (.+)$/i,
+    /^está mal[,.]?\s*(.+) es (.+)$/i,
+    /^te equivocas[,.]?\s*(.+) es (.+)$/i,
+    /^error[,.]?\s*(.+) es (.+)$/i,
+    /^falso[,.]?\s*(.+) es (.+)$/i,
+    
+    // Comandos con "recuerda", "anota", etc.
+    /^(recuerda|anota|guarda|apunta)[:]?\s*(.+) es (.+)$/i,
+    
+    // Información personal muy específica
+    /^mi (.+) es (.+)$/i,
+    /^mi (.+) son (.+)$/i,
+    /^soy (.+)$/i,
+    /^trabajo en (.+)$/i,
+    /^estudio (.+)$/i,
+    /^vivo en (.+)$/i,
+    /^me llamo (.+)$/i,
+    /^tengo (.+ años)$/i,
+    
+    // Comandos de voz naturales
+    /^(dile|di) que (.+) es (.+)$/i,
+    /^te digo que (.+) es (.+)$/i,
+    /^quiero que sepas que (.+) es (.+)$/i,
+    /^debes saber que (.+) es (.+)$/i,
+    /^tienes que recordar que (.+) es (.+)$/i
   ];
   
-  // Verificar patrones originales
-  for (const pattern of originalPatterns) {
+  // Verificar patrones explícitos PRIMERO
+  for (const pattern of explicitLearningPatterns) {
     if (pattern.test(lowerQuery)) {
+      logger.info(`✅ Patrón explícito de aprendizaje detectado para: "${lowerQuery}"`);
       return true;
     }
   }
   
-  // Detección inteligente adicional
-  const learningIndicators = [
-    'es', 'son', 'significa', 'tiene', 'está en', 'se llama', 
-    'fue', 'nació', 'murió', 'vive', 'trabaja'
+  // CUARTO: Patrones simples de declaración (MEDIA PRIORIDAD)
+  const simpleDeclarationPatterns = [
+    // Declaraciones directas simples (NO deben ser preguntas)
+    /^([^¿?]+) es ([^¿?]+)$/i,                    // "París es la capital de Francia"
+    /^([^¿?]+) son ([^¿?]+)$/i,                   // "Los gatos son animales"
+    /^([^¿?]+) significa ([^¿?]+)$/i,             // "Hola significa saludo"
+    /^([^¿?]+) se llama ([^¿?]+)$/i,              // "Mi perro se llama Max"
+    /^([^¿?]+) está en ([^¿?]+)$/i,               // "Madrid está en España"
+    /^([^¿?]+) fue ([^¿?]+)$/i,                   // "Shakespeare fue un escritor"
+    /^([^¿?]+) nació en ([^¿?]+)$/i,              // "Einstein nació en Alemania"
+    /^([^¿?]+) murió en ([^¿?]+)$/i,              // "Mozart murió en 1791"
+    /^([^¿?]+) vive en ([^¿?]+)$/i,               // "Mi hermana vive en Barcelona"
+    /^([^¿?]+) trabaja en ([^¿?]+)$/i,            // "Juan trabaja en Google"
+    /^([^¿?]+) quiere decir (.+)$/i,              // "Amor quiere decir cariño"
+    /^([^¿?]+) es lo mismo que (.+)$/i,           // "Auto es lo mismo que carro"
   ];
   
-  const hasLearningIndicator = learningIndicators.some(indicator => {
-    const regex = new RegExp(`\\b${indicator}\\b`, 'i');
-    return regex.test(lowerQuery);
-  });
+  // Verificar patrones de declaración simple
+  for (const pattern of simpleDeclarationPatterns) {
+    if (pattern.test(lowerQuery)) {
+      // VERIFICACIÓN ADICIONAL: Asegurarse de que no contiene palabras interrogativas
+      const interrogativeWords = ['qué', 'que', 'quién', 'quien', 'cómo', 'como', 'dónde', 'donde', 'cuándo', 'cuando', 'cuánto', 'cuanto', 'por qué', 'por que'];
+      const containsInterrogative = interrogativeWords.some(word => lowerQuery.includes(word));
+      
+      if (!containsInterrogative) {
+        logger.info(`✅ Patrón de declaración simple detectado para: "${lowerQuery}"`);
+        return true;
+      } else {
+        logger.info(`❌ Patrón de declaración contiene palabra interrogativa: "${lowerQuery}"`);
+      }
+    }
+  }
   
-  // Solo considerar aprendizaje si:
-  // 1. Tiene indicador de aprendizaje
-  // 2. NO es una pregunta
-  // 3. Tiene al menos 3 palabras (evitar frases muy cortas)
-  if (hasLearningIndicator && 
-      !this.isQuestion(lowerQuery) && 
-      lowerQuery.split(' ').length >= 3) {
-    logger.info(`Detección inteligente de aprendizaje para: "${lowerQuery}"`);
+  // QUINTO: Verificar si es una declaración con verbo "ser/estar" (BAJA PRIORIDAD)
+  const hasBeingVerb = /\b(es|son|está|están|fue|fueron|era|eran)\b/i.test(lowerQuery);
+  const hasNoQuestionWords = !/^(qué|que|quién|quien|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|por qué|por que|para qué|para que)/i.test(lowerQuery);
+  const hasNoQuestionMarks = !/[¿?]/.test(lowerQuery);
+  const hasMinimumWords = lowerQuery.split(' ').length >= 3;
+  
+  if (hasBeingVerb && hasNoQuestionWords && hasNoQuestionMarks && hasMinimumWords) {
+    logger.info(`✅ Detectada declaración con verbo ser/estar: "${lowerQuery}"`);
     return true;
   }
   
+  // Por defecto, NO es comando de aprendizaje
+  logger.info(`❌ NO es comando de aprendizaje: "${lowerQuery}"`);
   return false;
 },
 
@@ -1251,7 +1154,7 @@ isLearningCommand(query) {
 // (agregar antes del método normalizeQuery)
 
 /**
- * NUEVO MÉTODO - AGREGAR URGENTE para solucionar el error
+ * AGREGAR MÉTODO correctSpelling EN src/services/assistantService.js
  * Corrige errores ortográficos comunes en español
  * @param {string} text - Texto a corregir
  * @returns {string} - Texto corregido
@@ -1327,7 +1230,7 @@ correctSpelling(text) {
 
 
 /**
- * NUEVO MÉTODO - Agregar a AssistantService en src/services/assistantService.js
+ * AGREGAR MÉTODO extractQuestionFromStatement EN src/services/assistantService.js
  * Extrae pregunta de una declaración para crear entrada en base de conocimientos
  * @param {string} statement - Declaración del usuario
  * @returns {string} - Pregunta generada
@@ -1418,6 +1321,110 @@ extractQuestionFromStatement(statement) {
   return correctedStatement;
 },
 
+/**
+ * AGREGAR MÉTODO extractAnswerFromStatement EN src/services/assistantService.js
+ * Extrae respuesta de una declaración para almacenar en base de conocimientos
+ * @param {string} statement - Declaración del usuario
+ * @returns {string} - Respuesta generada
+ */
+extractAnswerFromStatement(statement) {
+  if (!statement) return statement;
+  
+  // Aplicar corrección ortográfica primero
+  const correctedStatement = this.correctSpelling(statement);
+  
+  const patterns = [
+    // Patrones básicos - extraer la parte después del verbo
+    { pattern: /(.+) es (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /(.+) son (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /(.+) significa (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /(.+) quiere decir (.+)/i, answer: (m) => m[2].trim() },
+    
+    // Patrones de ubicación - mantener contexto
+    { pattern: /(.+) está en (.+)/i, answer: (m) => `está en ${m[2].trim()}` },
+    { pattern: /(.+) queda en (.+)/i, answer: (m) => `queda en ${m[2].trim()}` },
+    { pattern: /(.+) se encuentra en (.+)/i, answer: (m) => `se encuentra en ${m[2].trim()}` },
+    { pattern: /(.+) vive en (.+)/i, answer: (m) => `vive en ${m[2].trim()}` },
+    
+    // Patrones de cantidad/medida - mantener contexto
+    { pattern: /(.+) tiene (.+)/i, answer: (m) => `tiene ${m[2].trim()}` },
+    { pattern: /(.+) mide (.+)/i, answer: (m) => `mide ${m[2].trim()}` },
+    { pattern: /(.+) pesa (.+)/i, answer: (m) => `pesa ${m[2].trim()}` },
+    
+    // Patrones temporales - mantener contexto
+    { pattern: /(.+) nació en (.+)/i, answer: (m) => `nació en ${m[2].trim()}` },
+    { pattern: /(.+) murió en (.+)/i, answer: (m) => `murió en ${m[2].trim()}` },
+    { pattern: /(.+) fue (.+)/i, answer: (m) => `fue ${m[2].trim()}` },
+    { pattern: /(.+) será (.+)/i, answer: (m) => `será ${m[2].trim()}` },
+    
+    // Patrones de trabajo/profesión
+    { pattern: /(.+) trabaja en (.+)/i, answer: (m) => `trabaja en ${m[2].trim()}` },
+    { pattern: /(.+) es (.+) de profesión/i, answer: (m) => `es ${m[2].trim()} de profesión` },
+    
+    // Patrones personales del usuario - adaptar para respuesta en segunda persona
+    { pattern: /mi (.+) es (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /mi (.+) son (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /soy (.+)/i, answer: (m) => `eres ${m[1].trim()}` },
+    { pattern: /me llamo (.+)/i, answer: (m) => `te llamas ${m[1].trim()}` },
+    { pattern: /trabajo en (.+)/i, answer: (m) => `trabajas en ${m[1].trim()}` },
+    { pattern: /vivo en (.+)/i, answer: (m) => `vives en ${m[1].trim()}` },
+    { pattern: /estudio (.+)/i, answer: (m) => `estudias ${m[1].trim()}` },
+    { pattern: /tengo (.+ años)/i, answer: (m) => `tienes ${m[1].trim()}` },
+    
+    // Patrones de relaciones
+    { pattern: /(.+) es mi (.+)/i, answer: (m) => `es tu ${m[2].trim()}` },
+    { pattern: /(.+) es el (.+) de (.+)/i, answer: (m) => `es el ${m[2].trim()} de ${m[3].trim()}` },
+    
+    // Patrones con nombres
+    { pattern: /(.+) se llama (.+)/i, answer: (m) => `se llama ${m[2].trim()}` },
+    
+    // Fechas y eventos especiales
+    { pattern: /(.+) es el (.+ de .+)/i, answer: (m) => `es el ${m[2].trim()}` },
+    
+    // Correcciones - extraer la parte correcta
+    { pattern: /no[,.]?\s*(.+) es (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /incorrecto[,.]?\s*(.+) es (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /está mal[,.]?\s*(.+) es (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /te equivocas[,.]?\s*(.+) es (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /error[,.]?\s*(.+) es (.+)/i, answer: (m) => m[2].trim() },
+    { pattern: /falso[,.]?\s*(.+) es (.+)/i, answer: (m) => m[2].trim() },
+    
+    // Patrones con comandos - recursivo
+    { pattern: /recuerda[:]?\s*(.+)/i, answer: (m) => this.extractAnswerFromStatement(m[1].trim()) },
+    { pattern: /anota[:]?\s*(.+)/i, answer: (m) => this.extractAnswerFromStatement(m[1].trim()) },
+    { pattern: /guarda[:]?\s*(.+)/i, answer: (m) => this.extractAnswerFromStatement(m[1].trim()) },
+    { pattern: /apunta[:]?\s*(.+)/i, answer: (m) => this.extractAnswerFromStatement(m[1].trim()) },
+    
+    // Patrones con "dile que", "te digo que"
+    { pattern: /dile que (.+)/i, answer: (m) => this.extractAnswerFromStatement(m[1].trim()) },
+    { pattern: /te digo que (.+)/i, answer: (m) => this.extractAnswerFromStatement(m[1].trim()) },
+    { pattern: /quiero que sepas que (.+)/i, answer: (m) => this.extractAnswerFromStatement(m[1].trim()) },
+    
+    // Patrones con confirmación - quitar la confirmación
+    { pattern: /(.+), ¿(ok|vale|entendido|de acuerdo|cierto)\?$/i, answer: (m) => this.extractAnswerFromStatement(m[1].trim()) }
+  ];
+  
+  // Intentar con cada patrón
+  for (const p of patterns) {
+    const match = correctedStatement.match(p.pattern);
+    if (match) {
+      const answer = p.answer(match);
+      logger.info(`Respuesta extraída: "${correctedStatement}" → "${answer}"`);
+      return answer;
+    }
+  }
+  
+  // Si no coincide con ningún patrón, usar la declaración completa como respuesta
+  // pero limpiando comandos innecesarios
+  let cleanAnswer = correctedStatement
+    .replace(/^(recuerda|anota|guarda|apunta)[:]?\s*/i, '')
+    .replace(/^(dile que|te digo que|quiero que sepas que)\s*/i, '')
+    .replace(/^(no|incorrecto|está mal|te equivocas|error|falso)[,.]?\s*/i, '')
+    .replace(/, ¿(ok|vale|entendido|de acuerdo|cierto)\?$/i, '')
+    .trim();
+  
+  return cleanAnswer || correctedStatement;
+},
 
 /**
  * NUEVO MÉTODO - Agregar a AssistantService en src/services/assistantService.js
@@ -1601,9 +1608,9 @@ extractAnswerFromStatement(statement) {
     return null;
   },
   
- /**
- * REEMPLAZAR MÉTODO EXISTENTE en AssistantService en src/services/assistantService.js
- * Procesa un comando de aprendizaje con mejor detección y corrección ortográfica
+/**
+ * REEMPLAZAR MÉTODO handleLearningCommand EN src/services/assistantService.js
+ * Procesa un comando de aprendizaje SIN CONFIRMACIÓN - Aprende directamente
  * @param {string} query - Consulta completa
  * @param {string} userId - ID del usuario
  * @returns {Promise<Object>} - Resultado del procesamiento
@@ -1761,7 +1768,7 @@ async handleLearningCommand(query, userId) {
 },
 
 /**
- * NUEVO MÉTODO - Agregar a AssistantService en src/services/assistantService.js
+ * AGREGAR MÉTODO formatLearningConfirmation EN src/services/assistantService.js
  * Formatea la confirmación de aprendizaje de manera más natural y amigable
  * @param {string} question - Pregunta generada
  * @param {string} answer - Respuesta a almacenar
