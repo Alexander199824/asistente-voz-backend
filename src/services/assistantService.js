@@ -651,7 +651,86 @@ Ejemplos super faciles:
   }
 },
 
+// TAMBIÉN AGREGAR ESTE MÉTODO a AssistantService para evitar más errores
 
+/**
+ * NUEVO MÉTODO - Agregar a AssistantService
+ * Detecta intentos potenciales de aprendizaje mal formateados
+ * @param {string} query - Consulta normalizada
+ * @returns {Object} - Resultado de la detección con sugerencias
+ */
+detectPotentialLearning(query) {
+  if (!query) return { isLikely: false };
+  
+  const indicators = [
+    // Frases que sugieren intento de enseñar
+    { pattern: /quiero enseñarte/i, isLikely: true },
+    { pattern: /tienes que saber/i, isLikely: true },
+    { pattern: /deberías saber/i, isLikely: true },
+    { pattern: /para que sepas/i, isLikely: true },
+    { pattern: /necesitas saber/i, isLikely: true },
+    
+    // Declaraciones que parecen información pero no están bien formateadas
+    { pattern: /(.+) (debería ser|tendría que ser) (.+)/i, isLikely: true, 
+      suggestion: (m) => `aprende que ${m[1]} es ${m[3]}`,
+      simple: (m) => `${m[1]} es ${m[3]}` },
+    
+    { pattern: /la respuesta correcta (de|para) (.+) es (.+)/i, isLikely: true,
+      suggestion: (m) => `aprende que ${m[2]} es ${m[3]}`,
+      simple: (m) => `${m[2]} es ${m[3]}` },
+    
+    { pattern: /(.+) en realidad es (.+)/i, isLikely: true,
+      suggestion: (m) => `aprende que ${m[1]} es ${m[2]}`,
+      simple: (m) => `${m[1]} es ${m[2]}` },
+    
+    { pattern: /no es (.+), es (.+)/i, isLikely: true,
+      suggestion: (m) => `incorrecto, es ${m[2]}`,
+      simple: (m) => `es ${m[2]}` },
+    
+    // Información personal indirecta
+    { pattern: /mi (.+) se llama (.+)/i, isLikely: true,
+      suggestion: (m) => `recuerda que mi ${m[1]} se llama ${m[2]}`,
+      simple: (m) => `mi ${m[1]} se llama ${m[2]}` },
+    
+    // Correcciones indirectas
+    { pattern: /eso no es cierto, (.+)/i, isLikely: true,
+      suggestion: (m) => `incorrecto, ${m[1]}`,
+      simple: (m) => m[1] },
+    
+    { pattern: /te equivocaste, (.+)/i, isLikely: true,
+      suggestion: (m) => `te equivocas, ${m[1]}`,
+      simple: (m) => m[1] }
+  ];
+  
+  for (const indicator of indicators) {
+    const match = query.match(indicator.pattern);
+    if (match) {
+      let suggestion = indicator.suggestion ? indicator.suggestion(match) : `aprende que ${query}`;
+      let simpleSuggestion = indicator.simple ? indicator.simple(match) : query;
+      
+      return {
+        isLikely: indicator.isLikely,
+        confidence: 0.8,
+        reason: `Coincide con patrón: ${indicator.pattern}`,
+        suggestion: suggestion,
+        simpleSuggestion: simpleSuggestion
+      };
+    }
+  }
+  
+  // Detección heurística básica
+  if (query.includes('es') || query.includes('son') || query.includes('significa')) {
+    return {
+      isLikely: true,
+      confidence: 0.6,
+      reason: 'Parece contener información factual',
+      suggestion: `aprende que ${query}`,
+      simpleSuggestion: query
+    };
+  }
+  
+  return { isLikely: false };
+},
 
 
 /**
@@ -1171,6 +1250,84 @@ isLearningCommand(query) {
   
   return false;
 },
+
+// AGREGAR ESTE MÉTODO INMEDIATAMENTE a AssistantService en src/services/assistantService.js
+// (agregar antes del método normalizeQuery)
+
+/**
+ * NUEVO MÉTODO - AGREGAR URGENTE para solucionar el error
+ * Corrige errores ortográficos comunes en español
+ * @param {string} text - Texto a corregir
+ * @returns {string} - Texto corregido
+ */
+correctSpelling(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // Diccionario de correcciones ortográficas comunes
+  const corrections = {
+    // Errores con acentos en preguntas
+    'que': 'qué',           // Solo cuando es pregunta
+    'como': 'cómo',         // Solo cuando es pregunta
+    'cuando': 'cuándo',     // Solo cuando es pregunta
+    'donde': 'dónde',       // Solo cuando es pregunta
+    'quien': 'quién',       // Solo cuando es pregunta
+    'cual': 'cuál',         // Solo cuando es pregunta
+    
+    // Errores de escritura comunes
+    'saves': 'sabes',
+    'saver': 'saber',
+    'tanbien': 'también',
+    'tambien': 'también',
+    'ahi': 'ahí',
+    'ay': 'hay',
+    'porqué': 'por qué',
+    'porque': 'porque',
+    'atravez': 'a través',
+    'asia': 'hacia',
+    'aser': 'hacer',
+    'acer': 'hacer',
+    'nose': 'no sé',
+    'noce': 'no sé',
+    
+    // Errores específicos de aprendizaje
+    'apreder': 'aprender',
+    'aprede': 'aprende',
+    'ensena': 'enseña',
+    'enceña': 'enseña',
+    'significar': 'significa',
+    'sinifica': 'significa',
+    
+    // Palabras mal escritas comunes
+    'haora': 'ahora',
+    'ora': 'ahora',
+    'nesesito': 'necesito',
+    'nesecito': 'necesito',
+    'quiero': 'quiero',
+    'kiero': 'quiero',
+    'dimelo': 'dímelo',
+    'esplicame': 'explícame',
+    'esplica': 'explica'
+  };
+  
+  let correctedText = text;
+  
+  // Aplicar correcciones palabra por palabra
+  for (const [wrong, correct] of Object.entries(corrections)) {
+    const regex = new RegExp(`\\b${wrong}\\b`, 'gi');
+    correctedText = correctedText.replace(regex, correct);
+  }
+  
+  // Limpiar espacios extra
+  correctedText = correctedText.replace(/\s+/g, ' ').trim();
+  
+  // Log si se hicieron correcciones
+  if (correctedText !== text) {
+    logger.info(`Corrección ortográfica aplicada: "${text}" → "${correctedText}"`);
+  }
+  
+  return correctedText;
+},
+
 
 
 /**
