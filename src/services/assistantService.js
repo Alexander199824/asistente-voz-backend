@@ -136,7 +136,7 @@ const AssistantService = {
 
 
 /**
- * MÉTODO COMPLETO CON MEJORAS - Reemplazar en AssistantService en src/services/assistantService.js
+ * MÉTODO COMPLETO CORREGIDO - Reemplazar en AssistantService en src/services/assistantService.js
  * Procesa una consulta del usuario y devuelve una respuesta
  * @param {string} query - Consulta del usuario
  * @param {string} userId - ID del usuario (opcional)
@@ -160,40 +160,48 @@ async processQuery(query, userId = null, options = {}) {
       };
     }
 
+    // Verificar si es una respuesta a confirmación de aprendizaje
+    if (options.awaitingLearningConfirmation) {
+      logger.info(`Procesando confirmación de aprendizaje para: "${options.originalQuery}"`);
+      
+      if (options.isConfirmed === true || 
+          options.isConfirmed === 'true' || 
+          normalizedQuery.match(/^s[ií]/i) || 
+          normalizedQuery.match(/^yes/i) ||
+          normalizedQuery.includes('confirmo') ||
+          normalizedQuery.includes('si guarda') ||
+          normalizedQuery.includes('está bien')) {
+        
+        logger.info(`Usuario confirmó aprendizaje para: "${options.originalQuery}"`);
+        return await this.handleLearningCommand(options.originalQuery, userId);
+      } else {
+        logger.info(`Usuario canceló aprendizaje para: "${options.originalQuery}"`);
+        return {
+          response: "De acuerdo, no guardaré esa información.",
+          source: "system",
+          confidence: 1.0
+        };
+      }
+    }
+
     // Verificar si es una respuesta a una pregunta anterior sobre buscar en la web
     if (options.awaitingWebSearchConfirmation) {
       logger.info(`Procesando confirmación de búsqueda web para: "${options.originalQuery}"`);
-      logger.info(`Valor de isConfirmed: ${options.isConfirmed}, tipo: ${typeof options.isConfirmed}`);
       
-      // Hacer más robusta la verificación de confirmación
       if (options.isConfirmed === true || 
           options.isConfirmed === 'true' || 
-          options.isConfirmed === 1 ||
-          options.isConfirmed === '1') {
+          normalizedQuery.match(/^s[ií]/i) || 
+          normalizedQuery.match(/^yes/i) ||
+          normalizedQuery.includes('busca') || 
+          normalizedQuery.includes('buscar') ||
+          normalizedQuery.includes('internet')) {
         
         logger.info(`Usuario confirmó búsqueda web para: "${options.originalQuery}"`);
-        
-        // Ejecutar búsqueda web + IA
         return await this.executeWebAndAISearch(options.originalQuery, userId);
-      } 
-      // También verificar si la respuesta del usuario contiene palabras de confirmación
-      else if (typeof normalizedQuery === 'string' && 
-              (normalizedQuery.match(/^s[ií]/i) || 
-               normalizedQuery.match(/^yes/i) ||
-               normalizedQuery.includes('busca') || 
-               normalizedQuery.includes('buscar') ||
-               normalizedQuery.includes('claro') ||
-               normalizedQuery.includes('adelante') ||
-               normalizedQuery.includes('por favor'))) {
-        
-        logger.info(`Usuario confirmó búsqueda web a través de texto: "${normalizedQuery}"`);
-        return await this.executeWebAndAISearch(options.originalQuery, userId);
-      } 
-      else {
+      } else {
         logger.info(`Usuario rechazó búsqueda web para: "${options.originalQuery}"`);
-        
         return {
-          response: "De acuerdo, no buscaré en fuentes externas. Si deseas enseñarme sobre este tema, puedes usar formatos súper fáciles como 'París es la capital de Francia' o 'Recuerda: [tu información]'.",
+          response: "De acuerdo, no buscaré en fuentes externas. Si tienes la información, puedes enseñármela con formatos simples como 'X es Y'.",
           source: "system",
           confidence: 1.0
         };
@@ -206,8 +214,6 @@ async processQuery(query, userId = null, options = {}) {
          normalizedQuery.includes('actual') || normalizedQuery.includes('updat'))) {
       
       logger.info(`Usuario confirmó actualización para: "${options.originalQuery}"`);
-      
-      // Ejecutar actualización con IA
       return await this.executeKnowledgeUpdate(options.knowledgeId, options.originalQuery, userId);
     }
     
@@ -228,14 +234,34 @@ async processQuery(query, userId = null, options = {}) {
     // Procesar según la intención detectada
     if (userIntent.name === 'learning' && userIntent.confidence >= 0.5) {
       logger.info(`Detectada intención de aprendizaje con alta confianza (${userIntent.confidence.toFixed(2)})`);
-      return await this.handleLearningCommand(normalizedQuery, userId);
+      
+      // NUEVO: Pedir confirmación antes de guardar
+      const confirmationMessage = `¿Quieres que aprenda esto?
+
+"${normalizedQuery}"
+
+Responde 'sí' para confirmar o 'no' para cancelar.`;
+
+      await this.logConversation({
+        userId,
+        query: normalizedQuery,
+        response: confirmationMessage,
+        confidence: 0.9
+      });
+
+      return {
+        response: confirmationMessage,
+        source: "learning_confirmation",
+        confidence: 0.9,
+        awaitingLearningConfirmation: true,
+        originalQuery: normalizedQuery
+      };
     }
 
     if (userIntent.name === 'greeting' && userIntent.confidence >= 0.5) {
       logger.info(`Detectado saludo/despedida con alta confianza (${userIntent.confidence.toFixed(2)})`);
       const greetingResponse = greetingService.getGreetingResponse(normalizedQuery);
       
-      // Registrar en el historial
       await this.logConversation({
         userId,
         query: normalizedQuery,
@@ -248,13 +274,32 @@ async processQuery(query, userId = null, options = {}) {
 
     if (userIntent.name === 'correction' && userIntent.confidence >= 0.6) {
       logger.info(`Detectada corrección con alta confianza (${userIntent.confidence.toFixed(2)})`);
-      // Intentar extraer un formato de aprendizaje de la corrección
       const correctionText = normalizedQuery.replace(/^(no|incorrecto|falso|te equivocas)[,.]?\s+/i, '');
-      return await this.handleLearningCommand(correctionText, userId);
+      
+      // NUEVO: Pedir confirmación para correcciones también
+      const confirmationMessage = `¿Quieres que corrija mi información?
+
+"${correctionText}"
+
+Responde 'sí' para confirmar o 'no' para cancelar.`;
+
+      await this.logConversation({
+        userId,
+        query: normalizedQuery,
+        response: confirmationMessage,
+        confidence: 0.9
+      });
+
+      return {
+        response: confirmationMessage,
+        source: "learning_confirmation",
+        confidence: 0.9,
+        awaitingLearningConfirmation: true,
+        originalQuery: correctionText
+      };
     }
     
     // BLOQUEO PRIORITARIO: Detección y manejo de consultas sobre el creador
-    // Esta verificación debe ejecutarse antes que cualquier otra
     const exactCreatorQueries = [
       "quien eres", 
       "quien te creo", 
@@ -274,7 +319,6 @@ async processQuery(query, userId = null, options = {}) {
         confidence: 1.0
       };
       
-      // Registrar en el historial
       await this.logConversation({
         userId,
         query: normalizedQuery,
@@ -285,49 +329,31 @@ async processQuery(query, userId = null, options = {}) {
       return creatorResponse;
     }
     
-    // 2. Detectar si es un comando de aprendizaje (MEJORADO)
+    // 2. Detectar si es un comando de aprendizaje directo (MEJORADO)
     if (this.isLearningCommand(normalizedQuery)) {
-      logger.info(`Detectado comando de aprendizaje: "${normalizedQuery}"`);
-      return await this.handleLearningCommand(normalizedQuery, userId);
-    }
-    
-    // NUEVO: Detección inteligente de aprendizaje para consultas ambiguas
-    if (!this.isGreeting(normalizedQuery)) {
-      // Verificar si podría ser un intento de aprendizaje mal formateado
-      const mightBeLearning = this.detectPotentialLearning(normalizedQuery);
+      logger.info(`Detectado comando de aprendizaje directo: "${normalizedQuery}"`);
       
-      if (mightBeLearning.isLikely) {
-        logger.info(`Posible intento de aprendizaje detectado: "${normalizedQuery}"`);
-        
-        // Ofrecer ayuda para reformular
-        const helpResponse = `Me parece que quieres enseñarme algo, pero no estoy seguro del formato. 
+      // NUEVO: Pedir confirmación antes de guardar
+      const confirmationMessage = `¿Confirmas que quieres que aprenda esto?
 
-¿Quisiste decir algo como esto?
-• "${mightBeLearning.suggestion}"
-• O simplemente: "${mightBeLearning.simpleSuggestion}"
+"${normalizedQuery}"
 
-También puedes usar formatos súper fáciles como:
-• "París es la capital de Francia"
-• "Recuerda: mi cumpleaños es el 15 de mayo"
-• "Mi nombre es Juan"`;
+Responde 'sí' para guardar o 'no' para cancelar.`;
 
-        await this.logConversation({
-          userId,
-          query: normalizedQuery,
-          response: helpResponse,
-          confidence: 0.7
-        });
+      await this.logConversation({
+        userId,
+        query: normalizedQuery,
+        response: confirmationMessage,
+        confidence: 0.9
+      });
 
-        return {
-          response: helpResponse,
-          source: "learning_assistance",
-          confidence: 0.7,
-          suggestions: {
-            formal: mightBeLearning.suggestion,
-            simple: mightBeLearning.simpleSuggestion
-          }
-        };
-      }
+      return {
+        response: confirmationMessage,
+        source: "learning_confirmation", 
+        confidence: 0.9,
+        awaitingLearningConfirmation: true,
+        originalQuery: normalizedQuery
+      };
     }
     
     // 3. Detectar y manejar saludos
@@ -335,7 +361,6 @@ También puedes usar formatos súper fáciles como:
       logger.info(`Detectado saludo: "${normalizedQuery}"`);
       const greetingResponse = greetingService.getGreetingResponse(normalizedQuery);
       
-      // Registrar en el historial
       await this.logConversation({
         userId,
         query: normalizedQuery,
@@ -347,12 +372,10 @@ También puedes usar formatos súper fáciles como:
     }
 
     // 4. PRIORIDAD ALTA: Detectar y manejar consultas sobre información del sistema
-    // Esta verificación DEBE ir antes de las consultas de IA y tiene prioridad absoluta
     if (systemInfoService.isSystemInfoQuery(normalizedQuery)) {
       logger.info(`Detectada consulta sobre información del sistema: "${normalizedQuery}"`);
       const systemResponse = systemInfoService.getSystemInfo(normalizedQuery);
       
-      // Registrar en el historial
       await this.logConversation({
         userId,
         query: normalizedQuery,
@@ -363,8 +386,7 @@ También puedes usar formatos súper fáciles como:
       return systemResponse;
     }
     
-    // 5. Verificación SECUNDARIA para consultas sobre el creador que pudieran escapar
-    // a la detección principal en systemInfoService.isSystemInfoQuery
+    // 5. Verificación SECUNDARIA para consultas sobre el creador
     const secondaryCreatorPatterns = [
       /^quien (te|lo) (creo|creó|hizo|desarrollo|desarrolló)(\?)?$/i,
       /^quienes (te|lo) (crearon|hicieron|desarrollaron)(\?)?$/i,
@@ -387,7 +409,6 @@ También puedes usar formatos súper fáciles como:
         confidence: 1.0
       };
       
-      // Registrar en el historial
       await this.logConversation({
         userId,
         query: normalizedQuery,
@@ -403,7 +424,6 @@ También puedes usar formatos súper fáciles como:
       logger.info(`Detectada consulta matemática: "${normalizedQuery}"`);
       const calculationResult = this.handleCalculationQuery(normalizedQuery);
       if (calculationResult) {
-        // Registrar en el historial
         await this.logConversation({
           userId,
           query: normalizedQuery,
@@ -418,11 +438,9 @@ También puedes usar formatos súper fáciles como:
     // 7. Detectar y manejar consultas de programación
     if (this.isProgrammingQuery(normalizedQuery)) {
       logger.info(`Detectada consulta de programación: "${normalizedQuery}"`);
-      // Primero intentar con la API de Stack Overflow
       try {
         const codeResult = await programmingService.searchCode(normalizedQuery);
         if (codeResult && codeResult.answer) {
-          // Registrar en el historial
           await this.logConversation({
             userId,
             query: normalizedQuery,
@@ -442,11 +460,9 @@ También puedes usar formatos súper fáciles como:
         logger.error('Error al buscar código de programación:', codeError);
       }
       
-      // Si falla la API, intentar con la biblioteca local de algoritmos
       try {
         const specificAlgorithm = programmingService.getSpecificAlgorithm(normalizedQuery);
         if (specificAlgorithm && specificAlgorithm.answer) {
-          // Registrar en el historial
           await this.logConversation({
             userId,
             query: normalizedQuery,
@@ -464,7 +480,6 @@ También puedes usar formatos súper fáciles como:
         
         const basicAlgorithm = programmingService.getBasicAlgorithm(normalizedQuery);
         if (basicAlgorithm && basicAlgorithm.answer) {
-          // Registrar en el historial
           await this.logConversation({
             userId,
             query: normalizedQuery,
@@ -491,7 +506,6 @@ También puedes usar formatos súper fáciles como:
       if (factualResponse) {
         logger.info(`Respondiendo con información factual: "${factualResponse.response}"`);
         
-        // Registrar en el historial
         await this.logConversation({
           userId,
           query: normalizedQuery,
@@ -509,24 +523,21 @@ También puedes usar formatos súper fáciles como:
     const isFactual = knowledgeResponseService.isFactualQuestion(normalizedQuery);
     const isAICandidate = AIService.isAIQuery(normalizedQuery);
 
-    // Logging detallado para diagnóstico
     logger.info(`Análisis de consulta: isFactual=${isFactual}, isAICandidate=${isAICandidate}`);
     logger.info(`Estado de IA: enabled=${config.ai && config.ai.enabled}, priority=${config.ai ? config.ai.priority : 'no configurado'}`);
 
-    // 10. PRIMERA BÚSQUEDA: Base de conocimientos - MEJORADA
+    // 10. PRIMERA BÚSQUEDA: Base de conocimientos
     logger.info(`PASO 1: Buscando respuesta en base de conocimientos para: "${normalizedQuery}"`);
 
     let knowledgeResults = [];
     try {
-      // Usar un umbral de confianza más bajo para mejorar la coincidencia
       knowledgeResults = await KnowledgeModel.findAnswers(
         normalizedQuery, 
-        config.assistant.minConfidenceThreshold || 0.6, // Umbral reducido (antes era 0.7)
+        config.assistant.minConfidenceThreshold || 0.6,
         userId
       );
       logger.info(`Resultados de base de conocimientos: ${knowledgeResults.length} encontrados`);
       
-      // Logging detallado para diagnóstico
       if (knowledgeResults.length > 0) {
         knowledgeResults.forEach((result, index) => {
           logger.info(`Coincidencia #${index + 1}: "${result.query}" (similitud: ${result.similarity.toFixed(2)}, confianza: ${result.confidence.toFixed(2)})`);
@@ -536,19 +547,16 @@ También puedes usar formatos súper fáciles como:
       logger.error('Error al buscar en la base de conocimientos:', knowledgeError);
     }
     
-    // Si hay una buena coincidencia en la base de conocimientos (similitud > 0.75)
+    // Si hay una buena coincidencia en la base de conocimientos
     if (knowledgeResults.length > 0 && knowledgeResults[0].similarity > 0.75) {
       const bestMatch = knowledgeResults[0];
       logger.info(`Mejor coincidencia encontrada en BD: "${bestMatch.query}" (similitud: ${bestMatch.similarity.toFixed(2)}, confianza: ${bestMatch.confidence.toFixed(2)})`);
       
-      // Verificar si la respuesta parece desactualizada y la consulta es candidata para IA
       const potentiallyOutdated = AIService.isPotentiallyOutdated(bestMatch.response);
       
-      // NUEVO: Preguntar al usuario si desea actualizar la información
       if (potentiallyOutdated && (isAICandidate || isFactual)) {
         const response = bestMatch.response;
         
-        // Registrar en el historial
         await this.logConversation({
           userId,
           query: normalizedQuery,
@@ -567,17 +575,14 @@ También puedes usar formatos súper fáciles como:
         };
       }
       
-      // Verificar si la respuesta necesita ser refinada (para preguntas factuales)
       let finalResponse = bestMatch.response;
       if (isFactual) {
         logger.info('Refinando respuesta factual');
         finalResponse = knowledgeResponseService.refineFactualResponse(normalizedQuery, finalResponse);
       }
       
-      // Corregir problemas de codificación en la respuesta
       finalResponse = this.fixEncoding(finalResponse);
       
-      // Registrar en el historial
       await this.logConversation({
         userId,
         query: normalizedQuery,
@@ -598,46 +603,32 @@ También puedes usar formatos súper fáciles como:
       logger.info('No se encontraron coincidencias en la base de conocimientos');
     }
     
-    // MEJORADO: Ofrecer múltiples opciones cuando no sabe algo
-    logger.info('No se encontró información en BD. Ofreciendo opciones de aprendizaje mejoradas.');
+    // MEJORADO: Mensaje cuando no sabe algo (SIN ejemplos irrelevantes)
+    logger.info('No se encontró información en BD. Ofreciendo opciones claras.');
 
-    // MEJORADO: Ofrecer múltiples opciones cuando no sabe algo
-    logger.info('No se encontró información en BD. Ofreciendo opciones de aprendizaje mejoradas.');
+    const cleanMessage = `No tengo información sobre "${normalizedQuery}".
 
-    const enhancedMessage = `No tengo información sobre "${normalizedQuery}".
+Opciones:
 
-Puedes hacer esto:
+1. Buscar en internet - Responde "busca" o "sí"
 
-1. ENSEÑARME SUPER FACIL:
-   - "${normalizedQuery.replace(/^(qué es|quién es|dónde está|cuándo|cómo)/, '').trim()} es [tu respuesta]"
-   - "Recuerda: [la información que quieres que sepa]"
-   - "Mi [algo] es [respuesta]" (para cosas personales)
+2. Enseñarme la respuesta - Usa formato simple:
+   "${normalizedQuery.replace(/^(qué es|quién es|dónde está|cuándo|cómo)/, '').trim()} es [tu respuesta]"
 
-2. O BUSCAR EN INTERNET:
-   - Responde "busca en internet" o "si"
+¿Qué prefieres?`;
 
-Ejemplos super faciles:
-- "Paris es la capital de Francia"
-- "Einstein nacio en Alemania" 
-- "Recuerda: mi cumpleanos es el 15 de mayo"
-- "Mi color favorito es azul"
-
-¿Que prefieres?`;
-
-    // Registrar en el historial
     await this.logConversation({
       userId,
       query: normalizedQuery,
-      response: enhancedMessage,
+      response: cleanMessage,
       confidence: 0.8
     });
 
     return {
-      response: enhancedMessage,
-      source: "enhanced_learning_prompt",
+      response: cleanMessage,
+      source: "no_knowledge_found",
       confidence: 0.8,
       awaitingWebSearchConfirmation: true,
-      awaitingLearningHelp: true,
       originalQuery: normalizedQuery
     };
     
@@ -654,7 +645,7 @@ Ejemplos super faciles:
 // TAMBIÉN AGREGAR ESTE MÉTODO a AssistantService para evitar más errores
 
 /**
- * NUEVO MÉTODO - Agregar a AssistantService
+ * REEMPLAZAR MÉTODO URGENTE en AssistantService
  * Detecta intentos potenciales de aprendizaje mal formateados
  * @param {string} query - Consulta normalizada
  * @returns {Object} - Resultado de la detección con sugerencias
@@ -662,47 +653,50 @@ Ejemplos super faciles:
 detectPotentialLearning(query) {
   if (!query) return { isLikely: false };
   
-  const indicators = [
-    // Frases que sugieren intento de enseñar
-    { pattern: /quiero enseñarte/i, isLikely: true },
-    { pattern: /tienes que saber/i, isLikely: true },
-    { pattern: /deberías saber/i, isLikely: true },
-    { pattern: /para que sepas/i, isLikely: true },
-    { pattern: /necesitas saber/i, isLikely: true },
+  // PRIMERA VERIFICACIÓN: Si es una pregunta clara, NO es aprendizaje
+  const questionPatterns = [
+    /^(qué|que|cuál|cual|quién|quien|cómo|como|dónde|donde|cuándo|cuando|por qué|por que|para qué|para que)/i,
+    /\?$/,
+    /¿/
+  ];
+  
+  // Si es claramente una pregunta, NO es intento de aprendizaje
+  for (const pattern of questionPatterns) {
+    if (pattern.test(query)) {
+      logger.info(`Consulta "${query}" detectada como PREGUNTA, no como intento de aprendizaje`);
+      return { isLikely: false };
+    }
+  }
+  
+  // SEGUNDA VERIFICACIÓN: Solo buscar indicadores MUY ESPECÍFICOS de aprendizaje
+  const specificLearningIndicators = [
+    // Frases explícitas de enseñanza
+    { pattern: /quiero enseñarte que/i, isLikely: true },
+    { pattern: /tienes que saber que/i, isLikely: true },
+    { pattern: /para que sepas que/i, isLikely: true },
+    { pattern: /necesitas saber que/i, isLikely: true },
     
-    // Declaraciones que parecen información pero no están bien formateadas
-    { pattern: /(.+) (debería ser|tendría que ser) (.+)/i, isLikely: true, 
-      suggestion: (m) => `aprende que ${m[1]} es ${m[3]}`,
-      simple: (m) => `${m[1]} es ${m[3]}` },
-    
-    { pattern: /la respuesta correcta (de|para) (.+) es (.+)/i, isLikely: true,
-      suggestion: (m) => `aprende que ${m[2]} es ${m[3]}`,
-      simple: (m) => `${m[2]} es ${m[3]}` },
-    
-    { pattern: /(.+) en realidad es (.+)/i, isLikely: true,
-      suggestion: (m) => `aprende que ${m[1]} es ${m[2]}`,
-      simple: (m) => `${m[1]} es ${m[2]}` },
-    
-    { pattern: /no es (.+), es (.+)/i, isLikely: true,
-      suggestion: (m) => `incorrecto, es ${m[2]}`,
-      simple: (m) => `es ${m[2]}` },
-    
-    // Información personal indirecta
-    { pattern: /mi (.+) se llama (.+)/i, isLikely: true,
-      suggestion: (m) => `recuerda que mi ${m[1]} se llama ${m[2]}`,
-      simple: (m) => `mi ${m[1]} se llama ${m[2]}` },
-    
-    // Correcciones indirectas
-    { pattern: /eso no es cierto, (.+)/i, isLikely: true,
+    // Correcciones específicas
+    { pattern: /eso no es cierto,? (.+)/i, isLikely: true,
       suggestion: (m) => `incorrecto, ${m[1]}`,
       simple: (m) => m[1] },
     
-    { pattern: /te equivocaste, (.+)/i, isLikely: true,
+    { pattern: /te equivocaste,? (.+)/i, isLikely: true,
       suggestion: (m) => `te equivocas, ${m[1]}`,
-      simple: (m) => m[1] }
+      simple: (m) => m[1] },
+    
+    { pattern: /la respuesta correcta es que (.+)/i, isLikely: true,
+      suggestion: (m) => `la respuesta correcta es ${m[1]}`,
+      simple: (m) => m[1] },
+    
+    // Información personal muy específica
+    { pattern: /quiero que recuerdes que mi (.+) es (.+)/i, isLikely: true,
+      suggestion: (m) => `recuerda que mi ${m[1]} es ${m[2]}`,
+      simple: (m) => `mi ${m[1]} es ${m[2]}` }
   ];
   
-  for (const indicator of indicators) {
+  // Verificar solo indicadores muy específicos
+  for (const indicator of specificLearningIndicators) {
     const match = query.match(indicator.pattern);
     if (match) {
       let suggestion = indicator.suggestion ? indicator.suggestion(match) : `aprende que ${query}`;
@@ -711,30 +705,22 @@ detectPotentialLearning(query) {
       return {
         isLikely: indicator.isLikely,
         confidence: 0.8,
-        reason: `Coincide con patrón: ${indicator.pattern}`,
+        reason: `Coincide con patrón específico de aprendizaje: ${indicator.pattern}`,
         suggestion: suggestion,
         simpleSuggestion: simpleSuggestion
       };
     }
   }
   
-  // Detección heurística básica
-  if (query.includes('es') || query.includes('son') || query.includes('significa')) {
-    return {
-      isLikely: true,
-      confidence: 0.6,
-      reason: 'Parece contener información factual',
-      suggestion: `aprende que ${query}`,
-      simpleSuggestion: query
-    };
-  }
+  // TERCERA VERIFICACIÓN: Solo si NO es pregunta Y tiene indicadores muy claros
+  // ELIMINAMOS la detección heurística que causaba problemas
   
+  // Por defecto, NO es intento de aprendizaje
   return { isLikely: false };
 },
 
-
 /**
- * NUEVO MÉTODO - Agregar a AssistantService en src/services/assistantService.js
+ * MEJORAR MÉTODO isQuestion() en AssistantService
  * Detecta si es una pregunta para evitar confusión con aprendizaje
  * @param {string} query - Consulta normalizada
  * @returns {boolean} - true si es una pregunta
@@ -743,8 +729,15 @@ isQuestion(query) {
   if (!query || typeof query !== 'string') return false;
   
   const questionPatterns = [
-    // Palabras interrogativas al inicio
-    /^(qué|que|cuál|cual|quién|quien|cómo|como|dónde|donde|cuándo|cuando|por qué|por que|para qué|para que)/i,
+    // Palabras interrogativas al inicio (MÁS ESPECÍFICO)
+    /^(qué|que)\s+(es|son|significa|significan)/i,
+    /^(cuál|cual)\s+(es|son|era|fueron)/i,
+    /^(quién|quien)\s+(es|fue|son|fueron)/i,
+    /^(cómo|como)\s+(se|es|fue|funciona)/i,
+    /^(dónde|donde)\s+(está|están|queda|se encuentra)/i,
+    /^(cuándo|cuando)\s+(es|fue|será|ocurrió)/i,
+    /^(por qué|por que|para qué|para que)/i,
+    /^(cuánto|cuanto|cuántos|cuantos|cuánta|cuanta|cuántas|cuantas)/i,
     
     // Signos de interrogación
     /\?$/,
@@ -752,7 +745,7 @@ isQuestion(query) {
     
     // Patrones de solicitud de información
     /^(sabes|conoces|me puedes decir|puedes decirme|podrías decirme)/i,
-    /^(dime|cuentame|cuéntame|explícame|explica|dime)/i,
+    /^(dime|cuentame|cuéntame|explícame|explica)/i,
     /^(me dices|me dirías|me explicarías)/i,
     
     // Patrones de consulta indirecta
@@ -774,14 +767,17 @@ isQuestion(query) {
   // Verificación adicional: si termina en signo de interrogación
   const hasQuestionMark = query.endsWith('?') || query.includes('¿');
   
+  const isQuestion = isQuestionPattern || hasQuestionMark;
+  
   // Log para diagnóstico
-  if (isQuestionPattern || hasQuestionMark) {
-    logger.info(`Detectada pregunta: "${query}" (patrón: ${isQuestionPattern}, signo: ${hasQuestionMark})`);
+  if (isQuestion) {
+    logger.info(`✅ PREGUNTA detectada: "${query}" (patrón: ${isQuestionPattern}, signo: ${hasQuestionMark})`);
+  } else {
+    logger.info(`❌ NO es pregunta: "${query}"`);
   }
   
-  return isQuestionPattern || hasQuestionMark;
+  return isQuestion;
 },
-
 
 
   /**
