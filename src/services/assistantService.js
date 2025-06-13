@@ -1154,24 +1154,40 @@ isLearningCommand(query) {
 // (agregar antes del método normalizeQuery)
 
 /**
- * AGREGAR MÉTODO correctSpelling EN src/services/assistantService.js
- * Corrige errores ortográficos comunes en español
+ * REEMPLAZAR MÉTODO correctSpelling EN src/services/assistantService.js
+ * Corrige errores ortográficos comunes en español - CORREGIDO para ser más inteligente
  * @param {string} text - Texto a corregir
  * @returns {string} - Texto corregido
  */
 correctSpelling(text) {
   if (!text || typeof text !== 'string') return text;
   
-  // Diccionario de correcciones ortográficas comunes
+  let correctedText = text;
+  
+  // CORRECCIONES INTELIGENTES BASADAS EN CONTEXTO
+  
+  // 1. Correcciones de palabras interrogativas SOLO cuando están al inicio y son preguntas
+  if (/^que\s+(es|son|significa|significan)/i.test(correctedText)) {
+    correctedText = correctedText.replace(/^que\s+/i, 'qué ');
+  }
+  if (/^como\s+(se|es|funciona|hacer)/i.test(correctedText)) {
+    correctedText = correctedText.replace(/^como\s+/i, 'cómo ');
+  }
+  if (/^cuando\s+(es|fue|será|ocurrió)/i.test(correctedText)) {
+    correctedText = correctedText.replace(/^cuando\s+/i, 'cuándo ');
+  }
+  if (/^donde\s+(está|están|queda|se encuentra)/i.test(correctedText)) {
+    correctedText = correctedText.replace(/^donde\s+/i, 'dónde ');
+  }
+  if (/^quien\s+(es|fue|son|fueron)/i.test(correctedText)) {
+    correctedText = correctedText.replace(/^quien\s+/i, 'quién ');
+  }
+  if (/^cual\s+(es|son|era|fueron)/i.test(correctedText)) {
+    correctedText = correctedText.replace(/^cual\s+/i, 'cuál ');
+  }
+  
+  // 2. Diccionario de correcciones específicas (sin palabras interrogativas)
   const corrections = {
-    // Errores con acentos en preguntas
-    'que': 'qué',           // Solo cuando es pregunta
-    'como': 'cómo',         // Solo cuando es pregunta
-    'cuando': 'cuándo',     // Solo cuando es pregunta
-    'donde': 'dónde',       // Solo cuando es pregunta
-    'quien': 'quién',       // Solo cuando es pregunta
-    'cual': 'cuál',         // Solo cuando es pregunta
-    
     // Errores de escritura comunes
     'saves': 'sabes',
     'saver': 'saber',
@@ -1180,7 +1196,6 @@ correctSpelling(text) {
     'ahi': 'ahí',
     'ay': 'hay',
     'porqué': 'por qué',
-    'porque': 'porque',
     'atravez': 'a través',
     'asia': 'hacia',
     'aser': 'hacer',
@@ -1201,14 +1216,11 @@ correctSpelling(text) {
     'ora': 'ahora',
     'nesesito': 'necesito',
     'nesecito': 'necesito',
-    'quiero': 'quiero',
     'kiero': 'quiero',
     'dimelo': 'dímelo',
     'esplicame': 'explícame',
     'esplica': 'explica'
   };
-  
-  let correctedText = text;
   
   // Aplicar correcciones palabra por palabra
   for (const [wrong, correct] of Object.entries(corrections)) {
@@ -1216,10 +1228,10 @@ correctSpelling(text) {
     correctedText = correctedText.replace(regex, correct);
   }
   
-  // Limpiar espacios extra
+  // 3. Limpiar espacios extra
   correctedText = correctedText.replace(/\s+/g, ' ').trim();
   
-  // Log si se hicieron correcciones
+  // 4. Log si se hicieron correcciones
   if (correctedText !== text) {
     logger.info(`Corrección ortográfica aplicada: "${text}" → "${correctedText}"`);
   }
@@ -1610,13 +1622,15 @@ extractAnswerFromStatement(statement) {
   
 /**
  * REEMPLAZAR MÉTODO handleLearningCommand EN src/services/assistantService.js
- * Procesa un comando de aprendizaje SIN CONFIRMACIÓN - Aprende directamente
+ * Procesa un comando de aprendizaje SIN CONFIRMACIÓN - CON DEBUG MEJORADO
  * @param {string} query - Consulta completa
  * @param {string} userId - ID del usuario
  * @returns {Promise<Object>} - Resultado del procesamiento
  */
 async handleLearningCommand(query, userId) {
   try {
+    logger.info(`🎓 INICIANDO APRENDIZAJE: "${query}"`);
+    
     if (!config.assistant.learningEnabled) {
       return {
         response: "Lo siento, el aprendizaje está deshabilitado actualmente.",
@@ -1629,6 +1643,8 @@ async handleLearningCommand(query, userId) {
     const correctedQuery = this.correctSpelling(query);
     const lowerQuery = correctedQuery.toLowerCase().trim();
     
+    logger.info(`🔤 Consulta corregida: "${correctedQuery}"`);
+    
     let question, answer;
     
     // PASO 2: Usar extractores inteligentes (NUEVOS)
@@ -1636,15 +1652,20 @@ async handleLearningCommand(query, userId) {
       question = this.extractQuestionFromStatement(correctedQuery);
       answer = this.extractAnswerFromStatement(correctedQuery);
       
+      logger.info(`📝 Extracción automática:`);
+      logger.info(`   📋 Pregunta extraída: "${question}"`);
+      logger.info(`   💬 Respuesta extraída: "${answer}"`);
+      
       // Verificar que tenemos pregunta y respuesta válidas
-      if (question && answer && question.trim() !== answer.trim()) {
-        logger.info(`Extracción exitosa - Pregunta: "${question}", Respuesta: "${answer}"`);
+      if (question && answer && question.trim() !== answer.trim() && question.trim().length > 0 && answer.trim().length > 0) {
+        logger.info(`✅ Extracción exitosa - Pregunta: "${question}", Respuesta: "${answer}"`);
       } else {
         // Si la extracción automática falla, usar métodos originales
+        logger.warn(`❌ Extracción automática falló, usando métodos originales`);
         throw new Error('Extracción automática falló, usando métodos originales');
       }
     } catch (extractError) {
-      logger.info('Usando métodos de extracción originales como respaldo');
+      logger.info('🔄 Usando métodos de extracción originales como respaldo');
       
       // PASO 3: Métodos originales como respaldo (MANTENER - no tocar)
       const explicitPatterns = [
@@ -1667,20 +1688,24 @@ async handleLearningCommand(query, userId) {
       ];
       
       // Verificar patrones originales
+      let patternFound = false;
       for (const pattern of explicitPatterns) {
         const match = lowerQuery.match(pattern);
         if (match) {
           question = match[1].trim();
           answer = match[2].trim();
+          patternFound = true;
+          logger.info(`🎯 Patrón original encontrado: "${pattern}" → Pregunta: "${question}", Respuesta: "${answer}"`);
           break;
         }
       }
       
       // Si aún no tenemos pregunta y respuesta, mostrar error amigable
-      if (!question || !answer) {
+      if (!patternFound || !question || !answer) {
+        logger.error(`❌ No se pudo extraer pregunta y respuesta de: "${correctedQuery}"`);
         return {
           response: `No pude entender cómo enseñarte eso. Prueba con formatos más simples como:
-• "${correctedQuery.replace(/^.+/, 'París')} es la capital de Francia"
+• "Netflix es una plataforma para ver series"
 • "Recuerda: mi color favorito es azul"
 • "Mi nombre es Juan"
 • "Aprende que el agua hierve a 100°C"`,
@@ -1691,10 +1716,21 @@ async handleLearningCommand(query, userId) {
     }
     
     // PASO 4: Normalizar la pregunta
+    const originalQuestion = question;
     question = this.normalizeQuery(question);
     
+    logger.info(`🔄 Pregunta normalizada: "${originalQuestion}" → "${question}"`);
+    
     // PASO 5: Buscar conocimiento existente
+    logger.info(`🔍 Buscando conocimiento existente para: "${question}"`);
     const existingEntries = await KnowledgeModel.findAnswers(question, 0.75, userId);
+    
+    logger.info(`📊 Resultados de búsqueda: ${existingEntries.length} encontrados`);
+    if (existingEntries.length > 0) {
+      existingEntries.forEach((entry, index) => {
+        logger.info(`   ${index + 1}. "${entry.query}" (similitud: ${entry.similarity?.toFixed(2) || 'N/A'})`);
+      });
+    }
     
     let knowledgeId;
     let confirmationResponse;
@@ -1702,6 +1738,8 @@ async handleLearningCommand(query, userId) {
     
     if (existingEntries.length > 0 && existingEntries[0].similarity > 0.8) {
       // ACTUALIZAR conocimiento existente
+      logger.info(`🔄 ACTUALIZANDO conocimiento existente ID: ${existingEntries[0].id}`);
+      
       await KnowledgeModel.updateKnowledge(existingEntries[0].id, {
         response: answer,
         confidence: Math.max(existingEntries[0].confidence, 0.95),
@@ -1715,9 +1753,11 @@ async handleLearningCommand(query, userId) {
       // Mensaje más amigable para actualizaciones
       confirmationResponse = `✅ ¡Perfecto! He actualizado mi conocimiento. Ahora sé que ${this.formatLearningConfirmation(question, answer)}.`;
       
-      logger.info(`Conocimiento actualizado: "${question}" → "${answer}"`);
+      logger.info(`✅ Conocimiento actualizado: "${question}" → "${answer}"`);
     } else {
       // CREAR nuevo conocimiento
+      logger.info(`🆕 CREANDO nuevo conocimiento`);
+      
       const newKnowledge = await KnowledgeModel.addKnowledge({
         query: question,
         response: answer,
@@ -1734,7 +1774,7 @@ async handleLearningCommand(query, userId) {
       // Mensaje más amigable para nuevos aprendizajes
       confirmationResponse = `✅ ¡Aprendido! Ahora sé que ${this.formatLearningConfirmation(question, answer)}.`;
       
-      logger.info(`Nuevo conocimiento creado: "${question}" → "${answer}"`);
+      logger.info(`✅ Nuevo conocimiento creado ID ${knowledgeId}: "${question}" → "${answer}"`);
     }
     
     // PASO 6: Registrar en el historial
@@ -1745,6 +1785,8 @@ async handleLearningCommand(query, userId) {
       knowledgeId,
       confidence: 1.0
     });
+    
+    logger.info(`✅ APRENDIZAJE COMPLETADO: ${confirmationResponse}`);
     
     // PASO 7: Retornar respuesta exitosa
     return {
@@ -1758,7 +1800,7 @@ async handleLearningCommand(query, userId) {
     };
     
   } catch (error) {
-    logger.error('Error al procesar comando de aprendizaje:', error);
+    logger.error('❌ Error al procesar comando de aprendizaje:', error);
     return {
       response: "Lo siento, ocurrió un error al intentar aprender. Por favor, intenta de nuevo con un formato más simple como 'París es la capital de Francia'.",
       source: "error",
@@ -1767,84 +1809,46 @@ async handleLearningCommand(query, userId) {
   }
 },
 
+
 /**
- * AGREGAR MÉTODO formatLearningConfirmation EN src/services/assistantService.js
- * Formatea la confirmación de aprendizaje de manera más natural y amigable
+ * REEMPLAZAR MÉTODO formatLearningConfirmation EN src/services/assistantService.js
+ * Formatea la confirmación de aprendizaje de manera más natural - SIMPLIFICADO
  * @param {string} question - Pregunta generada
  * @param {string} answer - Respuesta a almacenar
  * @returns {string} - Confirmación formateada
  */
 formatLearningConfirmation(question, answer) {
-  if (!question || !answer) return `${question} ${answer}`;
+  if (!question || !answer) return `${question || ''} ${answer || ''}`.trim();
   
-  // Limpiar la pregunta de palabras interrogativas para hacer la confirmación más natural
+  // Limpiar la pregunta de palabras interrogativas
   let cleanQuestion = question
     .replace(/^(qué es|qué son|quién es|quién fue|dónde está|dónde queda|cuándo es|cuándo fue|cómo se|cuánto tiene|cuántos años|cuál es|cuáles son)\s*/i, '')
     .replace(/^(información sobre|datos de|detalles de)\s*/i, '')
     .trim();
   
-  // Si la pregunta es muy genérica, usar la respuesta como base
+  // Si la pregunta es muy corta o vacía, usar solo la respuesta
   if (cleanQuestion.length < 3) {
     return answer;
   }
   
-  // Casos especiales para diferentes tipos de respuestas
-  const specialCases = [
-    // Ubicaciones
-    { pattern: /^(está en|queda en|se encuentra en|vive en|trabaja en) (.+)$/i, 
-      format: (match, q) => `${q} ${match[0]}` },
-    
-    // Cantidades/medidas
-    { pattern: /^(tiene|mide|pesa) (.+)$/i, 
-      format: (match, q) => `${q} ${match[0]}` },
-    
-    // Fechas/tiempo
-    { pattern: /^(nació en|murió en|será el|es el) (.+)$/i, 
-      format: (match, q) => `${q} ${match[0]}` },
-    
-    // Profesiones/roles
-    { pattern: /^(fue|es) (.+)$/i, 
-      format: (match, q) => `${q} ${match[0]}` },
-    
-    // Información personal del usuario
-    { pattern: /^(eres|te llamas|trabajas en|vives en|estudias|tienes) (.+)$/i, 
-      format: (match, q) => `${match[0]}` },
-    
-    // Nombres
-    { pattern: /^se llama (.+)$/i, 
-      format: (match, q) => `${q} se llama ${match[1]}` }
-  ];
-  
-  // Verificar casos especiales
-  for (const specialCase of specialCases) {
-    const match = answer.match(specialCase.pattern);
-    if (match) {
-      return specialCase.format(match, cleanQuestion);
-    }
-  }
-  
-  // Formateo por defecto basado en el tipo de pregunta original
-  if (question.startsWith('qué es') || question.startsWith('qué son')) {
+  // Formateo simple y directo
+  if (question.toLowerCase().startsWith('qué es')) {
     return `${cleanQuestion} es ${answer}`;
-  } else if (question.startsWith('quién es') || question.startsWith('quién fue')) {
+  } else if (question.toLowerCase().startsWith('qué son')) {
+    return `${cleanQuestion} son ${answer}`;
+  } else if (question.toLowerCase().startsWith('quién es') || question.toLowerCase().startsWith('quién fue')) {
     return `${cleanQuestion} ${answer}`;
-  } else if (question.startsWith('dónde')) {
+  } else if (question.toLowerCase().startsWith('dónde')) {
     return `${cleanQuestion} ${answer}`;
-  } else if (question.startsWith('cuándo')) {
-    return `${cleanQuestion} ${answer}`;
-  } else if (question.startsWith('cuánto') || question.startsWith('cuántos')) {
-    return `${cleanQuestion} ${answer}`;
-  } else if (question.startsWith('cómo')) {
-    return `${cleanQuestion} ${answer}`;
-  } else if (question.startsWith('cuál es') || question.startsWith('cuáles son')) {
-    return `${cleanQuestion} ${answer}`;
-  }
-  
-  // Formateo genérico
-  if (answer.includes('es') || answer.includes('son') || answer.includes('está') || answer.includes('tiene')) {
+  } else if (question.toLowerCase().startsWith('cuándo')) {
     return `${cleanQuestion} ${answer}`;
   } else {
-    return `${cleanQuestion} es ${answer}`;
+    // Formateo genérico
+    if (answer.includes(' es ') || answer.includes(' son ') || answer.includes(' está ') || answer.includes(' tiene ')) {
+      return `${cleanQuestion} ${answer}`;
+    } else {
+      return `${cleanQuestion} es ${answer}`;
+    }
   }
 },
 
